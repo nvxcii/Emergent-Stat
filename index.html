@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ExecEvidence — Guided Investigation System</title>  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="print.css" media="print">
+    <script defer src="js/part1.js"></script>
+  <script defer src="js/part2.js"></script>
+  <script defer src="js/part3.js"></script>
+  <script defer src="js/part4.js"></script>
+  <script defer src="js/part5.js"></script>
+  <script defer src="js/part6.js"></script>
+  <script defer src="js/part7.js"></script>
+  <script defer src="js/part8.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="logo">EXEC<span>EVIDENCE</span></div>
+    <div id="livePill">● LIVE</div>
+    <div class="case"><b id="caseName">Untitled Case</b><span id="caseSub">No property set</span></div>
+  </div>
+
+  <main>
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view" id="v-dash">
+      <h2 class="vh">Case Dashboard</h2>
+      <div class="vsub">Current position, clocks, and the next recommended action.</div>
+
+      <div id="dashNoCase" style="display:none">
+        <div class="card"><h3>Set up your case</h3><p class="muted" style="margin-bottom:10px">The system needs the basic case frame before it can guide, branch, and report.</p>
+        <button class="btn teal" onclick="openCaseSetup()">Set Up Case</button></div>
+      </div>
+
+      <div id="dashBody" style="display:none">
+        <div class="card nextaction" id="nextAction" onclick="goNextAction()"></div>
+        <div class="statgrid">
+          <div class="stat"><b id="stDone">0</b><span>Steps Done</span></div>
+          <div class="stat"><b id="stOpen">0</b><span>Open Actions</span></div>
+          <div class="stat"><b id="stEvents">0</b><span>Ledger Events</span></div>
+          <div class="stat"><b id="stPeople">0</b><span>People</span></div>
+        </div>
+        <div class="muted" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase">Investigation progress</div>
+        <div class="prog"><i id="progBar" style="width:0%"></i></div>
+        <div id="dashBranches"></div>
+        <h2 class="vh" style="font-size:14px;margin:14px 0 8px">Four Clocks</h2>
+        <div id="dashClocks"></div>
+      </div>
+    </section>
+
+    <!-- ============ ACTIONS ============ -->
+    <section class="view" id="v-actions">
+      <h2 class="vh">Action Cards</h2>
+      <div class="vsub">Tap a card for the 30-second briefing, script, questions, and records. Evidence can reorder this queue.</div>
+      <div id="newNodes"></div>
+      <div id="actionList"></div>
+    </section>
+
+    <!-- ============ ACTION DETAIL ============ -->
+    <section class="view" id="v-action">
+      <button class="btn ghost sm" style="margin-bottom:10px" onclick="showView('v-actions')">← Back to actions</button>
+      <div id="actionDetail"></div>
+    </section>
+
+    <!-- ============ LIVE ============ -->
+    <section class="view" id="v-live">
+      <div class="timerbox"><div class="s">INTERACTION IN PROGRESS</div><div class="t" id="timer">00:00</div><div class="muted" style="color:#9fb4d0;font-size:10.5px" id="liveMeta"></div></div>
+      <div id="liveForm"></div>
+    </section>
+
+    <!-- ============ CLOCKS ============ -->
+    <section class="view" id="v-clocks">
+      <h2 class="vh">Four Synchronized Clocks</h2>
+      <div class="vsub">Timelines should align. Conflicts are flagged, not hidden.</div>
+      <div id="clocksBody"></div>
+    </section>
+
+    <!-- ============ CHAIN ============ -->
+    <section class="view" id="v-chain">
+      <h2 class="vh">Chain of Possession</h2>
+      <div class="vsub">Every transition must answer six questions. Empty fields are visible gaps — and gaps are leverage.</div>
+      <div id="chainBody"></div>
+    </section>
+
+    <!-- ============ LEDGER ============ -->
+    <section class="view" id="v-ledger">
+      <h2 class="vh">Execution Ledger</h2>
+      <div class="vsub">Append-only audit trail. Corrections are annotations — history is never overwritten.</div>
+      <div id="ledgerBody"></div>
+    </section>
+
+    <!-- ============ REPORT ============ -->
+    <section class="view" id="v-report">
+      <h2 class="vh">Case Report</h2>
+      <div class="vsub">Generated continuously by the investigation itself. Every line traces to its source.</div>
+      <div class="row2" style="margin-bottom:10px">
+        <button class="btn ghost" onclick="exportJSON()">Export Case (JSON)</button>
+        <button class="btn" onclick="window.print()">Print / PDF</button>
+      </div>
+      <div id="reportBody"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-v="v-dash" class="on"><span class="ic">◉</span>Today</button>
+    <button data-v="v-actions"><span class="ic">▤</span>Actions<span class="bdg" id="bdgActions" style="display:none"></span></button>
+    <button data-v="v-clocks"><span class="ic">⏱</span>Clocks<span class="bdg" id="bdgConflicts" style="display:none"></span></button>
+    <button data-v="v-chain"><span class="ic">⇄</span>Chain</button>
+    <button data-v="v-ledger"><span class="ic">≣</span>Ledger</button>
+    <button data-v="v-report"><span class="ic">▦</span>Report</button>
+  </nav>
+</div>
+
+<!-- generic modal -->
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+
+
+
+
+
+</body>
+</html>

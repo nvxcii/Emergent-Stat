@@ -3,16 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>ExecEvidence — Guided Investigation System</title>  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="print.css" media="print">
-    <script defer src="js/part1.js"></script>
-  <script defer src="js/part2.js"></script>
-  <script defer src="js/part3.js"></script>
-  <script defer src="js/part4.js"></script>
-  <script defer src="js/part5.js"></script>
-  <script defer src="js/part6.js"></script>
-  <script defer src="js/part7.js"></script>
-  <script defer src="js/part8.js"></script>
+<title>ExecEvidence — Guided Investigation System</title>
+<link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 <div id="app">
@@ -95,10 +87,6 @@
     <section class="view" id="v-report">
       <h2 class="vh">Case Report</h2>
       <div class="vsub">Generated continuously by the investigation itself. Every line traces to its source.</div>
-      <div class="row2" style="margin-bottom:10px">
-        <button class="btn ghost" onclick="exportJSON()">Export Case (JSON)</button>
-        <button class="btn" onclick="window.print()">Print / PDF</button>
-      </div>
       <div id="reportBody"></div>
     </section>
   </main>
@@ -117,10 +105,25 @@
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
-
-
-
-
-
+<!-- CF-ADAPTER: shared ledger + Notice Chronology + Kimi compatibility adapter -->
+<script src="caseflow-ledger.js"></script>
+<script src="notice-chronology.js"></script>
+<script src="kimi-adapter.js"></script>
+<script src="js/app-a-1a.js"></script>
+<script src="js/app-a-1b.js"></script>
+<script src="js/app-a-2b.js"></script>
+<script src="js/app-b-1.js"></script>
+<script src="js/app-b-2.js"></script>
+<script src="js/app-c-1.js"></script>
+<script src="js/app-c-2.js"></script>
+<script src="js/app-d-1.js"></script>
+<script src="js/app-d-2.js"></script>
+<style media="print">
+  .tabbar,.topbar,.btn{display:none !important}
+  #app{max-width:none;margin:0;box-shadow:none}
+  main{padding:10px;overflow:visible}
+  .view{display:block !important;page-break-before:always}
+  .view:first-child{page-break-before:avoid}
+</style>
 </body>
 </html>

@@ -76,14 +76,6 @@ function renderReport(){
       .concat(facts));
 }
 
-/* ---------------- export ---------------- */
-function exportJSON(){
-  const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='case-'+(S.meta.name||'execEvidence').replace(/\s+/g,'_')+'.json';a.click();
-  logEvent('case','Case exported to JSON');save();
-}
-
 /* ---------------- renderers registry + init ---------------- */
 const renderers={'v-dash':renderDash,'v-actions':renderActions,'v-clocks':renderClocks,'v-chain':renderChain,'v-ledger':renderLedger,'v-report':renderReport};
 /* resume an interrupted live interaction */

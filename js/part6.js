@@ -77,7 +77,7 @@ function renderClocks(){
       <div class="muted" style="font-size:10px;margin-bottom:6px">Template: ${c.steps.join(' → ')}</div>
       ${entries.map(e=>{
         const cf=conf.find(x=>x.label===e.label&&x.clock===k);
-        return `<div class="tlentry ${cf?'conflict':''}"><div class="d">${esc(e.label)}</div><div class="m">${esc(e.date||'no date')} · logged ${fmtTs(e.ts)}</m></div>${cf?`<div class="conflictnote">⚠ ${cf.why}</div>`:''}</div>`;
+        return `<div class="tlentry ${cf?'conflict':''}"><div class="d">${esc(e.label)}</div><div class="m">${esc(e.date||'no date')} · logged ${fmtTs(e.ts)}</div>${cf?`<div class="conflictnote">⚠ ${cf.why}</div>`:''}</div>`;
       }).join('')||'<div class="muted" style="font-size:11.5px">No entries yet. Log clock events during live interactions or tap + Entry.</div>'}
     </div>`;}).join('');
   updateBadges(conf.length,S.actions.filter(a=>a.status==='pending').length+S.nextCustom.filter(n=>!n.done).length);

@@ -1,0 +1,6 @@
+
+  .tabbar,.topbar,.btn{display:none !important}
+  #app{max-width:none;margin:0;box-shadow:none}
+  main{padding:10px;overflow:visible}
+  .view{display:block !important;page-break-before:always}
+  .view:first-child{page-break-before:avoid}

@@ -165,6 +165,95 @@ console.log('\n[9] resume packet feeds case_reasoner /resume');
   ok(/VERIFIED/.test(txt) && /Legacy \(unvalidated\) writes/.test(txt) && /#1 \[interview, legacy\]/.test(txt), 'text packet carries verification, legacy count and provenance per event');
 }
 
+
+console.log('\n[10] B: migrated writers — persons, clock entries, chain answers, escalations');
+{
+  const st = memStorage(); const S = kimiState(); const A = mk(st); A.boot(S);
+
+  const person = A.addPerson('Front Desk', 'Property Manager / Site Supervisor', '');
+  S.persons.push(person); A.markValidated(S, ['persons']); A.persist(S);
+  ok(cmds(A, 'kimi.person_add').length === 1 && cmds(A, 'kimi.person_add')[0].payload.name === 'Front Desk', 'person recorded as a structured fact');
+  ok(cmds(A, 'kimi.legacy_write').filter((e) => e.payload.collection === 'persons').length === 0, 'migrated person add is not also flagged as a legacy write');
+  throwsCode(() => A.addPerson('', 'x'), 'K_PERSON_NAME', 'a person needs a name');
+
+  const ceManual = A.recordClockEntry('turnover', 'Unit entered & cleared', '2030-03-01', '');
+  S.clockEntries.turnover.push(ceManual); A.markValidated(S, ['clockEntries']); A.persist(S);
+  ok(ceManual.unverified === true, 'a manually entered clock date (no source) is marked unverified');
+  const ceFromInteraction = A.recordClockEntry('turnover', 'Vendor assigned', '2030-03-02', 'INTERACTION-7');
+  S.clockEntries.turnover.push(ceFromInteraction); A.markValidated(S, ['clockEntries']); A.persist(S);
+  ok(ceFromInteraction.unverified === false, 'a clock date sourced from an interaction is not flagged unverified');
+  throwsCode(() => A.recordClockEntry('made-up-lane', 'x', '2030-01-01'), 'K_CLOCK_LANE', 'unknown clock lane rejected');
+
+  A.recordChainAnswer(0, 'Who?', 'Crew lead J. Smith', 'INTERACTION-7');
+  S.chain[0].fields['Who?'] = 'Crew lead J. Smith'; A.markValidated(S, ['chain']); A.persist(S);
+  ok(cmds(A, 'kimi.chain_answer').length === 1, 'chain answer recorded');
+  ok(cmds(A, 'kimi.legacy_write').filter((e) => e.payload.collection === 'chain').length === 0, 'migrated chain edit is not double-counted as legacy');
+  throwsCode(() => A.recordChainAnswer(-1, 'Who?', 'x'), 'K_CHAIN_STAGE', 'negative stage index rejected');
+
+  const esc = A.recordEscalation(2, 'Preservation notice', 'sent 2030-03-05');
+  S.escalations.push(esc); A.markValidated(S, ['escalations']); A.persist(S);
+  ok(cmds(A, 'kimi.escalation').length === 1 && cmds(A, 'kimi.escalation')[0].payload.rung === 2, 'escalation recorded with its rung');
+  ok(A.legacyWriteCount() === 0, 'no legacy writes were produced for any of the four migrated actions');
+
+  // an UNRELATED direct mutation is still caught as a legacy write, proving detection still works
+  S.nodes.push({ id: 'n1', type: 'vendor', label: 'Acme Hauling' });
+  A.persist(S);
+  ok(A.legacyWriteCount() === 1 && cmds(A, 'kimi.legacy_write')[0].payload.collection === 'nodes', 'an action that was NOT migrated still shows up as a legacy write');
+}
+
+console.log('\n[11] C: concurrent writers — persist() refuses to clobber, operator chooses the resolution');
+{
+  const st = memStorage();
+  const S1 = kimiState(); const A1 = mk(st); A1.boot(S1);
+  A1.record('case', 'Case set up on device 1', ''); A1.persist(S1);
+
+  // device 2 opens the same storage after device 1's first write
+  const S2 = JSON.parse(st._d['execEvidence.v1']); const A2 = mk(st); A2.boot(S2);
+
+  // both devices now make independent commands without syncing with each other
+  A1.record('contact', 'Interaction started (device 1)', ''); ok(A1.persist(S1) === true, 'device 1 persists first, no conflict yet');
+  A2.record('contact', 'Interaction started (device 2)', '');
+  const ok2 = A2.persist(S2);
+  ok(ok2 === false, "device 2's persist is refused: storage moved since device 2 last read it");
+  ok(!!A2.lastConflict && A2.lastConflict.remoteEntries.length === 2, 'conflict exposes what is actually on disk (3 entries from device 1)');
+  ok(st._d['caseflow.ledger.v1'] === JSON.stringify(A1._case().state().entries), "device 1's data on disk is untouched by the refused write");
+
+  const preDropSeq = A2._case().state().entries.length;
+  const res = A2.resolveConflictKeepRemote(S2);
+  ok(res.droppedLocalCommands.length === 1 && res.droppedLocalCommands[0].command === 'kimi.event', 'device 2 is told exactly which of its own commands were dropped');
+  ok(A2._case().verify().head === A1._case().verify().head, 'after resolving, device 2 matches device 1 exactly');
+  ok(A2.persist(S2) === true, 'device 2 can persist again immediately after resolving');
+
+  // a second fork, this time resolved the other way
+  const S3 = JSON.parse(st._d['execEvidence.v1']); const A3 = mk(st); A3.boot(S3);
+  A1.record('contact', 'Device 1 keeps going', ''); A1.persist(S1);
+  A3.record('contact', 'Device 3 diverges', '');
+  ok(A3.persist(S3) === false, 'device 3 also conflicts');
+  const res2 = A3.resolveConflictKeepLocal(S3);
+  ok(res2.overwrittenRemoteCommands.length === 1, 'keep-local reports what it overwrote, rather than doing it silently');
+  ok(JSON.parse(st._d['caseflow.ledger.v1']).length === A3._case().state().entries.length, "storage now reflects device 3's chosen branch");
+  throwsCode(() => A3.resolveConflictKeepRemote(S3), 'K_NO_CONFLICT', 'resolving twice with no pending conflict is refused');
+}
+
+console.log('\n[12] C: offline-tolerant storage under the adapter — writes survive a flaky backend');
+{
+  let failNext = false;
+  const backing = {};
+  const flakyStorage = {
+    getItem: (k) => (k in backing ? backing[k] : null),
+    setItem: (k, v) => { if (failNext) { failNext = false; throw new Error('device offline'); } backing[k] = String(v); }
+  };
+  const S = kimiState(); const A = mk(flakyStorage); A.boot(S);
+  A.record('case', 'setup', '');
+  failNext = true;
+  let threwOnSave = false;
+  try { A.persist(S); } catch (e) { threwOnSave = true; }
+  ok(threwOnSave, 'a storage failure surfaces rather than being silently swallowed');
+  ok(A.events().length === 1, 'the in-memory ledger still has the command — nothing was lost, only the write to disk failed');
+  A.persist(S); // storage is back online
+  ok(JSON.parse(backing['caseflow.ledger.v1']).length === A._case().state().entries.length, 'the retried persist reaches storage once it is available again');
+}
+
 console.log('\n========================================');
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 console.log('========================================\n');

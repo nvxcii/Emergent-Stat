@@ -1,9 +1,9 @@
 --- caseflow-ledger/caseflow-ledger.js	2026-09-23 10:52:56.000000000 +0000
 +++ /mnt/user-data/outputs/kimi-v4-integration/caseflow-ledger.js	2026-09-23 12:49:13.288037000 +0000
 @@ -89,7 +89,7 @@
-      chainQuestions: ['who', 'when', 'where', 'authority', 'record', 'next_custodian']
-    };
-
+       chainQuestions: ['who', 'when', 'where', 'authority', 'record', 'next_custodian']
+     };
+ 
 -    let entries = [];   // LedgerEntry[]
 +    let entries = [];   // LedgerEntry[]  (restored below when opts.entries is given)
      let sources = {};   // id -> Source
@@ -38,8 +38,7 @@
        return entry;
 @@ -313,10 +320,48 @@
        };
-     }
-
+ 
 -    return { caseId, template, append, project, verify, state,
 +    /* ---------------- atomic multi-entry commands ----------------
 +       A domain command may append several entries (e.g. notice.create +
@@ -80,10 +79,10 @@
 +    }
 +
 +    return { caseId, template, append, project, verify, state, transaction,
-       byCmdId: (id) => (cmdIndex[id] != null ? entries[cmdIndex[id] - 1] : null),
-       constants: { EVIDENCE_STATES, GATES } };
+      byCmdId: (id) => (cmdIndex[id] != null ? entries[cmdIndex[id] - 1] : null),
+      constants: { EVIDENCE_STATES, GATES } };
    }
 
 -  return { createCase, sha256, EVIDENCE_STATES, GATES };
 +  return { createCase, sha256, hashOf, EVIDENCE_STATES, GATES };
- });
+});

@@ -1,4 +1,18 @@
 
+const DISPOSITION_TYPES = ['Discarded (trash)','Sold (auction/sale)','Donated','Transferred','Stored','Retained (by employee/property)','Destroyed','Unknown'];
+
+const LADDER = [
+ {t:'Written records request',pre:'Any stage. No case required.',purpose:'Obtain records voluntarily.',target:'Records custodian',sought:'Work orders, notices, YARDI audit, vendor records',next:'If unanswered → preservation notice → formal demand'},
+ {t:'Preservation notice',pre:'Any stage. No case required.',purpose:'Prevent destruction of records.',target:'Property management leadership',sought:'Written confirmation of preservation',next:'If ignored → formal demand; if case filed → discovery'},
+ {t:'Formal demand',pre:'Before or without litigation.',purpose:'Create a documented refusal or compliance.',target:'Leadership / designated legal channel',sought:'Records or a written refusal',next:'Refusal → preserves the issue for litigation'},
+ {t:'Interrogatories (Special)',pre:'Civil action pending + discovery available.',purpose:'Compel answers from parties under oath.',target:'Opposing party',sought:'Identification of individuals, facts, authorizations',next:'Insufficient answers → meet-and-confer → motion to compel'},
+ {t:'Request for Production',pre:'Civil action pending.',purpose:'Compel documents and things.',target:'Opposing party',sought:'Records, photos, manifests, communications',next:'Non-production → motion to compel'},
+ {t:'Request for Admission',pre:'Civil action pending.',purpose:'Lock down facts as admitted or disputed.',target:'Opposing party',sought:'Admissions: dates, custody, disposition',next:'Denial without evidence → trial issue preserved'},
+ {t:'Business-records subpoena (SUBP-010)',pre:'Civil action pending. Non-party holder.',purpose:'Obtain records from non-parties (vendors, platforms).',target:'Vendor / records custodian (non-party)',sought:'Manifests, invoices, storage/disposal records',next:'Objection → motion to compel compliance'},
+ {t:'Deposition subpoena / deposition',pre:'Civil action pending.',purpose:'Testimony under oath; lock in accounts.',target:'Individuals with personal knowledge',sought:'Who, when, authority, destination',next:'Contradictions → contradiction register entries'},
+ {t:'Motion to compel',pre:'Civil action pending; prior attempt made.',purpose:'Judicial enforcement of discovery.',target:'The court',sought:'Order compelling production or answers',next:'Non-compliance → sanctions motions'}
+];
+
 /* ---------------- store ---------------- */
 const KEY='execEvidence.v1';
 let S;
@@ -18,9 +32,23 @@ function cfBlocked(){ toast('Ledger failed verification — changes are not bein
 function load(){try{S=JSON.parse(localStorage.getItem(KEY))||defaultState();}catch(e){S=defaultState();}
   if(!S.clockEntries)S=defaultState();}
 load();
-/* CF-ADAPTER: boot verifies the stored ledger (or imports legacy S.events once) and projects S.events */
-const CF=CaseFlowKimi.createKimiAdapter({storage:localStorage,appKey:KEY});
-const CF_BOOT=CF.boot(S);
+/* CF-ADAPTER: durable storage is IndexedDB, offline-tolerant (see idb-storage.js).
+   Boot is now async: it hydrates storage, then verifies the stored ledger (or
+   imports legacy S.events once) and projects S.events, before the app renders. */
+const CF_STORAGE=CaseFlowIDB.createIndexedDBStorage({dbName:'execEvidence'});
+let CF,CF_BOOT;
+async function cfInit(){
+  await CF_STORAGE.ready();
+  /* CF-ADAPTER: one-time carry-over from the localStorage-based adapter (prior release)
+     into IndexedDB, so upgrading loses nothing already recorded. */
+  if(CF_STORAGE.getItem('caseflow.ledger.v1')===null){
+    const oldLedger=localStorage.getItem('caseflow.ledger.v1'),oldApp=localStorage.getItem(KEY);
+    if(oldLedger){CF_STORAGE.setItem('caseflow.ledger.v1',oldLedger);if(oldApp)CF_STORAGE.setItem(KEY,oldApp);}
+  }
+  CF=CaseFlowKimi.createKimiAdapter({storage:CF_STORAGE,appKey:KEY});
+  const raw=CF_STORAGE.getItem(KEY); if(raw){try{Object.assign(S,JSON.parse(raw));}catch(e){}}
+  CF_BOOT=CF.boot(S);
+}
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -80,112 +108,3 @@ const gv=id=>document.getElementById(id)?.value.trim()||'';
 function openSheet(html,full){const m=document.getElementById('modal');document.getElementById('sheet').innerHTML=html;m.classList.add('on');}
 function closeSheet(){document.getElementById('modal').classList.remove('on');}
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeSheet();});
-/* ============================ PART 2: EXECUTION ENGINE ============================ */
-
-/* ---------------- dashboard ---------------- */
-function renderDash(){
-  const has=!!(S.meta.name||S.meta.property);
-  document.getElementById('dashNoCase').style.display=has?'none':'block';
-  document.getElementById('dashBody').style.display=has?'block':'none';
-  document.getElementById('caseName').textContent=S.meta.name||'Untitled Case';
-  document.getElementById('caseSub').textContent=[S.meta.property,S.meta.unit].filter(Boolean).join(' · ')||'No property set';
-  if(!has)return;
-
-  const pend=S.actions.filter(a=>a.status==='pending');
-  const done=S.actions.filter(a=>a.status==='done').length;
-  const customOpen=S.nextCustom.filter(n=>!n.done);
-  document.getElementById('stDone').textContent=done;
-  document.getElementById('stOpen').textContent=pend.length+customOpen.length;
-  document.getElementById('stEvents').textContent=S.events.length;
-  document.getElementById('stPeople').textContent=S.persons.length;
-
-  // next action
-  const na=document.getElementById('nextAction');
-  let target=customOpen[0]||pend[0];
-  if(!target){na.innerHTML='<div class="k">INVESTIGATION</div><h3>All protocol steps complete</h3><p>Unresolved branches, follow-ups, and escalation remain below. Keep logging until every clock aligns.</p>';}
-  else{
-    const isCustom=!PROTOCOL.some(p=>p.key===target.key);
-    const roleName=isCustom?target.role:(PROTOCOL.find(p=>p.key===target.key)?.role||target.key);
-    na.innerHTML=`<div class="k">NEXT RECOMMENDED ACTION</div><h3>${esc(roleName)}</h3>
-    <p>${isCustom?'Created by evidence during the investigation.':'Protocol step '+target.key+' of A–F.'} ${esc(target.where||'')}</p>
-    <button class="btn" style="background:#ffd166;color:var(--navy-deep)" onclick="event.stopPropagation();openAction('${target.key}','${isCustom?target.id:''}')">Open Action Card →</button>`;
-  }
-  // progress
-  const total=S.actions.length+S.nextCustom.length||1;
-  document.getElementById('progBar').style.width=Math.round(100*(done+S.nextCustom.filter(n=>n.done).length)/total)+'%';
-
-  // unresolved branches
-  const conf=computeConflicts();
-  const overdue=S.followUps.filter(f=>f.status==='open'&&f.due&&f.due<new Date().toISOString().slice(0,10));
-  let bw='';
-  if(conf.length)bw+=`<div class="branchwarn"><b>⏱ ${conf.length} clock conflict${conf.length>1?'s':''}</b> — chronological mismatch flagged. Investigate before relying on either date.</div>`;
-  if(overdue.length)bw+=`<div class="branchwarn"><b>↻ ${overdue.length} overdue follow-up${overdue.length>1?'s':''}</b> — oldest: ${esc(overdue[0].desc||overdue[0].due)}</div>`;
-  const contra=S.propositions.filter(p=>p.status==='CONTRADICTED').length;
-  if(contra)bw+=`<div class="branchwarn"><b>⚠ ${contra} unresolved contradiction${contra>1?'s':''}</b> — both accounts preserved in the contradiction register.</div>`;
-  document.getElementById('dashBranches').innerHTML=bw;
-
-  // clocks summary
-  document.getElementById('dashClocks').innerHTML=Object.entries(CLOCKS).map(([k,c])=>{
-    const n=S.clockEntries[k].length;
-    return `<div class="clockrow" onclick="showView('v-clocks')"><span class="dot" style="background:${c.color}"></span>
-    <span class="nm">${c.name}</span>${conf.some(x=>x.clock===k)?'<span class="flag">⚠ CONFLICT</span>':''}<span class="ct">${n}</span></div>`;
-  }).join('');
-  updateBadges(conf.length,pend.length+customOpen.length);
-}
-function goNextAction(){
-  const pend=S.actions.filter(a=>a.status==='pending');
-  const customOpen=S.nextCustom.filter(n=>!n.done);
-  const t=customOpen[0]||pend[0];
-  if(t)openAction(t.key, !PROTOCOL.some(p=>p.key===t.key)?t.id:'');
-}
-function updateBadges(conflicts,openActions){
-  const b1=document.getElementById('bdgConflicts');b1.style.display=conflicts?'flex':'none';b1.textContent=conflicts;
-  const b2=document.getElementById('bdgActions');b2.style.display=openActions?'flex':'none';b2.textContent=openActions;
-}
-
-/* ---------------- actions ---------------- */
-function renderActions(){
-  let h='';
-  const open=S.nextCustom.filter(n=>!n.done);
-  if(open.length){
-    h+=`<div class="newnode"><b>Evidence-created actions (${open.length})</b> — the investigation grew these nodes. Clear them before the next protocol step.</div>`;
-    open.forEach(n=>{h+=`<div class="acard" onclick="openAction('${n.key}','${n.id}')">
-      <div class="top"><span class="lt" style="background:var(--orange)">★</span><h3>${esc(n.role)}</h3></div>
-      <div class="where">${esc(n.where||'Location identified during investigation')} · from ${esc(n.fromSummary||'evidence')}</div>
-      <div class="tags"><span class="pill orange">EVIDENCE-CREATED</span></div></div>`;});
-  }
-  h+=S.actions.map(a=>{
-    const p=PROTOCOL.find(x=>x.key===a.key);
-    return `<div class="acard ${a.status==='done'?'done':''}" onclick="openAction('${a.key}','')">
-      <div class="top"><span class="lt">${a.key}</span><h3>${esc(p.role)}</h3><span class="pill ${a.status==='done'?'green':'blue'}">${a.status==='done'?'DONE':'OPEN'}</span></div>
-      <div class="where">${esc(p.where)}</div>
-      <div class="tags"><span class="pill gray">${a.interactions} interaction${a.interactions===1?'':'s'}</span>${a.personName?`<span class="pill purple">${esc(a.personName)}</span>`:''}</div>
-    </div>`;}).join('');
-  document.getElementById('actionList').innerHTML=h;
-}
-
-function openAction(key,customId){
-  const custom=customId?S.nextCustom.find(n=>n.id===customId):null;
-  const a=S.actions.find(x=>x.key===key);
-  const p=custom?{role:custom.role,where:custom.where||'',objective:'Follow up on evidence obtained during the investigation.',briefing:'Evidence-created node. Work it like any protocol card: open the record, capture the routing, create the next node.',script:'"I\'m following up on [the matter referenced in my conversation with '+esc(custom.fromSummary||'your office')+']. I need [record / name / destination] confirmed in writing."',questions:['Can you confirm what was discussed/promised?','Who is responsible for the next step?','When will I have it in writing?'],records:['Whatever the originating evidence pointed to'],reinforcement:'Same-day written confirmation · Log everything.',evidence:'Photograph or screenshot anything shown to you.',tips:['If they do not know, ask who would know.','Document the exact wording of a refusal.']}:PROTOCOL.find(x=>x.key===key);
-  const past=S.interactions.filter(i=>i.key===key);
-  document.getElementById('actionDetail').innerHTML=`
-    <div class="card" style="border-color:var(--teal)">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
-        <span class="lt" style="width:34px;height:34px;border-radius:50%;background:${custom?'var(--orange)':'var(--teal)'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex:none">${custom?'★':key}</span>
-        <div><h3 style="margin:0">${esc(p.role)}</h3><div class="muted" style="font-size:11px">${esc(p.where)}</div></div>
-      </div>
-      ${p.contact?`<div class="muted" style="font-size:11.5px;margin:4px 0">Contact: ${esc(p.contact)}</div>`:''}
-      <p style="font-size:12.5px"><b>Objective:</b> ${esc(p.objective)}</p>
-    </div>
-    <div class="sec"><h4>30-Second Briefing</h4><p style="font-size:12.5px">${esc(p.briefing)}</p></div>
-    <div class="sec"><h4>Approach Script</h4><div class="scriptbox">${esc(p.script)}</div></div>
-    <div class="sec"><h4>Questions Relevant to This Person's Authority</h4><ul>${p.questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
-    <div class="sec"><h4>Records to Request</h4><ul>${p.records.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
-    <div class="sec" style="border-left:4px solid var(--red)"><h4 style="color:var(--red)">Reinforcement Available Here</h4><p style="font-size:12px">${esc(p.reinforcement)}</p></div>
-    <div class="sec"><h4>Evidence to Preserve From This Encounter</h4><p style="font-size:12px">${esc(p.evidence)}</p></div>
-    ${p.tips.map(t=>`<div class="tip"><b>Context Tip</b>${esc(t)}</div>`).join('')}
-    ${past.length?`<div class="sec"><h4>Past Interactions (${past.length})</h4>${past.map(i=>`<div class="muted" style="font-size:11.5px;padding:3px 0">• ${fmtTs(i.startTs)} → ${esc(i.personName||'unidentified')} · outcome: ${esc(i.outcomeLabel||'completed')}</div>`).join('')}</div>`:''}
-    <button class="btn teal" onclick="startInteraction('${key}','${customId||''}')">Begin Interaction — Start Timestamp</button>`;
-  showView('v-action');
-}

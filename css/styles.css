@@ -143,6 +143,12 @@ h2.vh{font-size:17px;font-weight:800;color:var(--navy-deep);margin-bottom:2px}
 /* ===== ledger ===== */
 .lev{border-left:3px solid var(--navy);background:#fff;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:7px;font-size:12px}
 .lev .ts{font-size:9.5px;color:var(--mut);letter-spacing:.06em}
+.cf-prov{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:1px 6px;margin-left:6px;border:1px solid currentColor}
+.cf-legacy{color:#8a6d3b}.cf-import{color:#5a6b80}.cf-valid{color:#1e7d4f}
+.cf-bar{background:#f6f8fb;border:1px solid #d7dee8;border-radius:8px;padding:8px 10px;margin-bottom:9px;font-size:11.5px;color:#42536a}
+.cf-bar.bad{background:#fdecec;border-color:#d2373c;color:#8c1d20}
+.cf-unv{font-size:10px;font-weight:800;color:#8a6d3b;margin-top:2px}
+/* CF-ADAPTER */
 .lev .tp{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#fff;border-radius:4px;padding:1px 6px;margin-right:6px}
 .lev .ann{font-size:11px;color:var(--gold);border-top:1px dashed var(--line);margin-top:5px;padding-top:4px}
 

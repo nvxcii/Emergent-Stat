@@ -1,3 +1,27 @@
+
+/* ---------------- report ---------------- */
+function stPill(s){return `<span class="st st-${s.replace(/ /g,'-')}">${s}</span>`;}
+function srcLink(refId){
+  if(!refId)return '';
+  const i=S.interactions.find(x=>x.id===refId);
+  return `<span class="src" onclick="jumpSource('${refId}')">${i?('src: interview '+fmtTs(i.startTs)):'src: event'}</span>`;
+}
+function jumpSource(id){
+  const i=S.interactions.find(x=>x.id===id);
+  openSheet(`<h3>Source Record</h3><div class="why">Every report statement traces here.</div>
+    ${i?`<div class="sec"><h4>Interview ${fmtTs(i.startTs)}</h4>
+      <div class="muted" style="font-size:12px"><b>${esc(i.personName||'unidentified')}</b> ${esc(i.personTitle||'')} · ${esc(i.method||'')} · ${esc(i.location||'')}</div>
+      ${i.qa.filter(x=>x.q).map(x=>`<div style="font-size:12px;margin-top:5px"><b>Q:</b> ${esc(x.q)}<br><b>A:</b> ${esc(x.a)}</div>`).join('')}
+      ${i.recordsReq?`<div style="font-size:11.5px;margin-top:5px"><b>Records requested:</b> ${esc(i.recordsReq)}</div>`:''}
+      ${i.recordsGot?`<div style="font-size:11.5px"><b>Records received:</b> ${esc(i.recordsGot)}</div>`:''}
+      ${i.notes?`<div style="font-size:11.5px;margin-top:5px"><b>Notes:</b> ${esc(i.notes)}</div>`:''}
+    </div>`:'<div class="muted">Source event not found.</div>'}
+    <button class="btn ghost" onclick="closeSheet()">Close</button>`,true);
+}
+function repSec(title,rows){
+  return `<div class="repsec"><h3>${title}<span class="cnt">${rows.length} item${rows.length===1?'':'s'}</span></h3>
+    ${rows.length?rows.join(''):'<div class="muted" style="font-size:11.5px">Nothing recorded yet.</div>'}</div>`;
+}
 function renderReport(){
   const evs=[...S.events].sort((a,b)=>a.ts-b.ts);
   const inter=[...S.interactions].sort((a,b)=>a.startTs-b.startTs);
@@ -76,25 +100,26 @@ function renderReport(){
       .concat(facts));
 }
 
-/* ---------------- export ---------------- */
-function exportJSON(){
-  const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='case-'+(S.meta.name||'execEvidence').replace(/\s+/g,'_')+'.json';a.click();
-  logEvent('case','Case exported to JSON');save();
-}
-
 /* ---------------- renderers registry + init ---------------- */
-const renderers={'v-dash':renderDash,'v-actions':renderActions,'v-clocks':renderClocks,'v-chain':renderChain,'v-ledger':renderLedger,'v-report':renderReport};
-/* resume an interrupted live interaction */
-if(S.live && !S.live.endTs){
-  document.getElementById('liveMeta').textContent=nodeLabel(S.live.key)+' · '+fmtTs(S.live.startTs)+' (resumed)';
-  document.getElementById('livePill').classList.add('on');
-  clearInterval(tick);tick=setInterval(()=>{
-    const s=Math.floor((Date.now()-S.live.startTs)/1000);
-    document.getElementById('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-  },500);
-  renderLiveForm();
-  renderDash();
-  showView('v-live');
-} else { showView('v-dash'); }
+const renderers={'v-dash':renderDash,'v-actions':renderActions,'v-clocks':renderClocks,'v-notice':renderNotice,'v-chain':renderChain,'v-ledger':renderLedger,'v-report':renderReport};
+/* CF-ADAPTER: everything below ran synchronously at parse time before storage was
+   async; it now runs once cfInit() has hydrated storage, booted the ledger, and
+   restored S from the last saved snapshot. */
+function cfAfterBoot(){
+  if(S.live && !S.live.endTs){
+    document.getElementById('liveMeta').textContent=nodeLabel(S.live.key)+' · '+fmtTs(S.live.startTs)+' (resumed)';
+    document.getElementById('livePill').classList.add('on');
+    clearInterval(tick);tick=setInterval(()=>{
+      const s=Math.floor((Date.now()-S.live.startTs)/1000);
+      document.getElementById('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+    },500);
+    renderLiveForm();
+    renderDash();
+    showView('v-live');
+  } else { showView('v-dash'); }
+  /* CF-ADAPTER: surface a failed ledger verification or an unresolved multi-writer conflict immediately */
+  if(CF_BOOT.status==='integrity_failure'){toast('Stored ledger failed verification — writes blocked. See Ledger tab.');}
+  if(CF.lastConflict){toast('This case changed on another device — resolve it on the Ledger tab before continuing.');}
+  window.addEventListener('beforeunload',()=>{CF_STORAGE.drain();});
+}
+cfInit().then(cfAfterBoot);

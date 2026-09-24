@@ -1,0 +1,88 @@
+--- caseflow-ledger/caseflow-ledger.js	2026-09-23 10:52:56.000000000 +0000
++++ /mnt/user-data/outputs/kimi-v4-integration/caseflow-ledger.js	2026-09-23 12:49:13.288037000 +0000
+@@ -89,7 +89,7 @@
+       chainQuestions: ['who', 'when', 'where', 'authority', 'record', 'next_custodian']
+     };
+ 
+-    let entries = [];   // LedgerEntry[]
++    let entries = [];   // LedgerEntry[]  (restored below when opts.entries is given)
+    let sources = {};   // id -> Source
+    let props = {};     // id -> Proposition
+    let events = {};    // id -> Event
+@@ -181,16 +181,23 @@
+       payload = payload || {};
+       cmd_id = cmd_id || null;
+
+-      // idempotency: same cmd_id → return existing entry, never duplicate
++      // idempotency: same cmd_id → return existing entry, never duplicate.
++      // Reusing a cmd_id for a DIFFERENT command is refused rather than silently absorbed.
++      const fp = hashOf(JSON.stringify({ command: type, payload: payload }));
+       if (cmd_id && cmdIndex[cmd_id] != null) {
+-        return entries[cmdIndex[cmd_id] - 1];
++        const prior = entries[cmdIndex[cmd_id] - 1];
++        if (prior.fingerprint && prior.fingerprint !== fp) {
++          throw invariant('L_IDEMPOTENCY_CONFLICT', 'cmd_id ' + cmd_id + ' was already used for a different command.', { cmd_id: cmd_id });
++        }
++        return prior;
+       }
+
+       const p = Object.assign({}, payload);
+       CHECKS.forEach((fn) => fn(p, type));
+       checkProposal(p, type);
+
+-      const entry = emit({ at: now(), actor: actor || 'operator', command: type, payload: p, annotates: payload.annotates || null });
++      // cmd_id and fingerprint sit outside the hashed body so existing chains stay verifiable.
++      const entry = emit({ at: now(), actor: actor || 'operator', command: type, payload: p, annotates: payload.annotates || null, cmd_id: cmd_id, fingerprint: fp });
+      if (cmd_id) cmdIndex[cmd_id] = entry.seq;
+     apply(entry);
+     return entry;
+@@ -313,10 +320,48 @@
+       };
+
+-    return { caseId, template, append, project, verify, state,
++    /* ---------------- atomic multi-entry commands ----------------
++       A domain command may append several entries (e.g. notice.create +
++       proposition_add). transaction() guarantees all-or-nothing: on any
++       throw, the ledger and every index are restored exactly. */
++    function transaction(fn) {
++      const snap = {
++        n: entries.length,
++        sources: JSON.stringify(sources), props: JSON.stringify(props),
++        events: JSON.stringify(events), proposals: JSON.stringify(proposals),
++        cmdIndex: JSON.stringify(cmdIndex)
++      };
++      try { return fn(); }
++      catch (err) {
++        entries.length = snap.n;
++        sources = JSON.parse(snap.sources); props = JSON.parse(snap.props);
++        events = JSON.parse(snap.events); proposals = JSON.parse(snap.proposals);
++        cmdIndex = JSON.parse(snap.cmdIndex);
++        throw err;
++      }
++    }
++
++    /* ---------------- rehydration (reopen the app) ----------------
++       Verifies the stored chain first; replays apply() without re-hashing,
++       so seq, timestamps, and hashes are exactly what was stored. */
++    if (Array.isArray(opts.entries) && opts.entries.length) {
++      const incoming = JSON.parse(JSON.stringify(opts.entries));
++      let prev = GENESIS_PREV;
++      for (let i = 0; i < incoming.length; i++) {
++        const e = incoming[i];
++        const expect = hashOf(JSON.stringify({ seq: e.seq, prev_hash: e.prev_hash, at: e.at, actor: e.actor, command: e.command, payload: e.payload }));
++        if (e.seq !== i + 1 || e.prev_hash !== prev || e.hash !== expect) {
++          throw invariant('L_REHYDRATE_INTEGRITY', 'Stored ledger failed verification at seq ' + (i + 1) + '; refusing to load it as authoritative.', { at: i + 1 });
++        }
++        prev = e.hash;
++      }
++      incoming.forEach((e) => { entries.push(e); if (e.cmd_id) cmdIndex[e.cmd_id] = e.seq; apply(e); });
++    }
++
++    return { caseId, template, append, project, verify, state, transaction,
+      byCmdId: (id) => (cmdIndex[id] != null ? entries[cmdIndex[id] - 1] : null),
+     constants: { EVIDENCE_STATES, GATES } };
+  }
+
+-  return { createCase, sha256, EVIDENCE_STATES, GATES };
++  return { createCase, sha256, hashOf, EVIDENCE_STATES, GATES };
+});

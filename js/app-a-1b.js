@@ -1,0 +1,43 @@
+  evidence:'Keep the written request and any written confirmation. Screenshot portal confirmations.',
+  tips:['If records cannot be released, identify the authorized records custodian and the formal request procedure.','A written "this record does not exist" is itself evidence — request it in writing.']},
+ {key:'D',role:'Identified Facilities Technician / Maintenance / Janitorial / Security Worker',where:'On-site, in passing — brief, respectful, specific',contact:'',
+  objective:'Personal-knowledge facts from the person who physically handled the property.',
+  briefing:'Front-line workers know what they saw and did — not policy. Ask only about personal knowledge. One good routing answer ("the supervisor would know") is a win.',
+  script:'"Quick question — were you on the crew that cleared unit [__] around [date]? I\'m just trying to find where the belongings went. Who assigned you to that unit?"',
+  questions:['Did you work on this unit?','Who assigned you?','What did you personally see or do?','Where did you place the property?','Who received it next?'],
+  records:['Their contemporaneous recollection — recorded in your log the same day'],
+  reinforcement:'Identify supervisor / next custodian · Document contemporaneous recollection.',
+  evidence:'Log their answers verbatim the same day, with time and location.',
+  tips:['Ask only what this person personally observed.','Respect time pressure — short and specific.','If they say "I don\'t know," ask: "Who would know?"']},
+ {key:'E',role:'Outside Vendor / Hauler / Cleaner / Storage / Disposal Company',where:'Identified via work order, invoice, or manifest',contact:'',
+  objective:'Trace the property past the property line: pickup, transport, destination.',
+  briefing:'The vendor is where the property left the building. Targets: work order or manifest number, pickup date, crew, destination, and any storage or disposal record.',
+  script:'"I\'m tracing a pickup from [property], unit [__], around [date]. Do you have a work order or manifest under that address? I need the pickup date, crew, destination, and any storage or disposal record."',
+  questions:['Work order / invoice number?','Pickup date? Assigned crew?','Items received? Vehicle / manifest number?','Destination / receiving party?','Storage / disposal / sale records?','Communications with the property?'],
+  records:['Manifest or work order','Invoice','Storage records','Disposal / sale documentation'],
+  reinforcement:'If records are needed in a civil case, a business-records subpoena (SUBP-010) may apply — with counsel or court self-help.',
+  evidence:'Photograph any manifest or invoice they show you.',
+  tips:['Vendors identify realized destination — keep asking "and then where?".','One destination name creates the next node.']},
+ {key:'F',role:'Property Management Leadership / Administration',where:'Executive office · designated legal / records channel',contact:'',
+  objective:'Formalize: designate the custodian, confirm preservation, get a written response.',
+  briefing:'This is the escalation node. You are no longer asking — you are formally requesting, in writing, with a deadline.',
+  script:'"My written records request of [date] regarding unit [__] has not been answered. I\'m asking your office to (1) designate the records custodian, (2) confirm all related records are preserved, and (3) provide a written response within [10] days."',
+  questions:['Who is the designated records custodian?','What procedures apply to my records request?','Will you confirm preservation of all related records?','What are the next steps if records are not provided?'],
+  records:['Written response from leadership','Preservation confirmation','Custodian designation'],
+  reinforcement:'Formal preservation notice · Use designated legal channel · Escalate if necessary.',
+  evidence:'Everything in writing from this point. Date-stamp every letter.',
+  tips:['Document the exact wording of any refusal.','A refusal here creates a Refusal event — not an endpoint.']}
+];
+
+/* ---------------- outcome / branch definitions ---------------- */
+const OUTCOMES = {
+  cooperative:{label:'✔ Cooperative',color:'green',why:'They answered or provided something. Capture it, confirm it in writing, and decide the next node.'},
+  dontknow:{label:'✖ “I don’t know”',color:'orange',why:'Unknown is not an endpoint. Route upward: who would know?'},
+  dept:{label:'➦ Another department',color:'blue',why:'Capture the exact routing: name, contact, location. This creates the next contact node.'},
+  cannotrelease:{label:'🔒 Cannot release record',color:'purple',why:'Identify the authorized records custodian and the formal request procedure.'},
+  disposed:{label:'▣ Property was disposed',color:'red',why:'Open the disposition branch. The type of disposition determines the questions and the statute.'},
+  vendor:{label:'🚚 Vendor handled it',color:'teal',why:'Open the vendor-tracing workflow.'},
+  norecord:{label:'∅ No record exists',color:'gold',why:'A verbal “no record” is worthless. Create a formal Record Nonexistence event — in writing.'},
+  refusal:{label:'⛔ Refusal',color:'red',why:'Preserve exactly what was said, by whom, and present the escalation path.'},
+  names:{label:'＋ Names mentioned',color:'navy',why:'One tap turns a mentioned name into a tracked person node.'}
+};

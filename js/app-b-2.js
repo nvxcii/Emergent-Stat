@@ -1,3 +1,21 @@
+      ${p.contact?`<div class="muted" style="font-size:11.5px;margin:4px 0">Contact: ${esc(p.contact)}</div>`:''}
+      <p style="font-size:12.5px"><b>Objective:</b> ${esc(p.objective)}</p>
+    </div>
+    <div class="sec"><h4>30-Second Briefing</h4><p style="font-size:12.5px">${esc(p.briefing)}</p></div>
+    <div class="sec"><h4>Approach Script</h4><div class="scriptbox">${esc(p.script)}</div></div>
+    <div class="sec"><h4>Questions Relevant to This Person's Authority</h4><ul>${p.questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
+    <div class="sec"><h4>Records to Request</h4><ul>${p.records.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
+    <div class="sec" style="border-left:4px solid var(--red)"><h4 style="color:var(--red)">Reinforcement Available Here</h4><p style="font-size:12px">${esc(p.reinforcement)}</p></div>
+    <div class="sec"><h4>Evidence to Preserve From This Encounter</h4><p style="font-size:12px">${esc(p.evidence)}</p></div>
+    ${p.tips.map(t=>`<div class="tip"><b>Context Tip</b>${esc(t)}</div>`).join('')}
+    ${past.length?`<div class="sec"><h4>Past Interactions (${past.length})</h4>${past.map(i=>`<div class="muted" style="font-size:11.5px;padding:3px 0">• ${fmtTs(i.startTs)} → ${esc(i.personName||'unidentified')} · outcome: ${esc(i.outcomeLabel||'completed')}</div>`).join('')}</div>`:''}
+    <button class="btn teal" onclick="startInteraction('${key}','${customId||''}')">Begin Interaction — Start Timestamp</button>`;
+  showView('v-action');
+}
+
+/* ---------------- live interaction ---------------- */
+let tick=null;
+function nodeLabel(key){const p=PROTOCOL.find(p=>p.key===key); if(p) return p.role; const n=S.nextCustom.find(n=>n.key===key); return n?n.role:key;}
 function startInteraction(key,customId){
   S.live={id:uid(),key,customId,startTs:Date.now(),endTs:null,qa:[{q:'',a:''}],
     recordsReq:'',recordsGot:'',recordsProm:'',recordsRef:'',names:'',depts:'',vendors:'',locns:'',
@@ -85,6 +103,7 @@ function attachFiles(inp){
 }
 function delAtt(id){S.live.attachments=S.live.attachments.filter(a=>a.id!==id);S.attachments=S.attachments.filter(a=>a.id!==id);save();renderLiveForm();}
 function abandonLive(){
-  logEvent('contact','Attempted contact, no completed interaction: '+(PROTOCOL.find(p=>p.key===S.live.key)?.role||S.live.key));
+  try{CF.recordAbandon(S.live);}catch(err){cfBlocked();}   /* CF-ADAPTER (migrated) */
+  logEvent('contact','Attempted contact, no completed interaction: '+(PROTOCOL.find(p=>p.key===S.live.key)?.role||S.live.key),undefined,{validated:true});
   S.live=null;clearInterval(tick);document.getElementById('livePill').classList.remove('on');save();showView('v-actions');toast('Attempted contact logged');
 }

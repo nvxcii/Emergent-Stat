@@ -1,3 +1,4 @@
+
 /* ============================ PART 3: BRANCHING + NODES + CLOCKS + LEDGER ============================ */
 
 /* ---------------- outcome branches ---------------- */
@@ -80,17 +81,23 @@ function saveOutcome(type){
 }
 
 /* ---------------- node helpers ---------------- */
+/* CF-ADAPTER (migrated): person identity is a structured fact, sourced to the live interaction if there is one */
 function addPerson(name,role){
   if(S.persons.some(p=>p.name.toLowerCase()===name.toLowerCase()))return;
-  S.persons.push({id:uid(),name,role,ts:Date.now(),source:'investigation'});logEvent('branch','New person identified: '+name+' ('+role+')');
+  try{const p=CF.addPerson(name,role,S.live?S.live.id:'');S.persons.push(p);CF.markValidated(S,['persons']);}
+  catch(err){cfBlocked();return;}
+  logEvent('branch','New person identified: '+name+' ('+role+')',undefined,{validated:true});
 }
 function createCustomAction(role,where,summary,contact){
   S.nextCustom.push({id:uid(),key:'X'+uid(),role,where,summary,fromSummary:summary,done:false});
 }
 function addProp(text,status){S.propositions.push({id:uid(),text,status,sources:[S.live?S.live.id:''],ts:Date.now()});}
+/* CF-ADAPTER (migrated): a clock date with no source is marked unverified, same rule as case-setup dates */
 function addClock(clock,label,date){
-  S.clockEntries[clock].push({id:uid(),label,date,ts:Date.now(),src:S.live?S.live.id:''});
-  logEvent('clock',CLOCKS[clock].name+': '+label+' ('+date+')');
+  const source=S.live?S.live.id:'';
+  try{const e=CF.recordClockEntry(clock,label,date,source);S.clockEntries[clock].push(e);CF.markValidated(S,['clockEntries']);}
+  catch(err){cfBlocked();return;}
+  logEvent('clock',CLOCKS[clock].name+': '+label+' ('+date+')'+(source?'':' — UNVERIFIED, no source'),undefined,{validated:true});
 }
 
 /* ---------------- legal reinforcement ---------------- */
@@ -101,4 +108,11 @@ function openEscalate(intro){
     <button class="btn sm ghost" style="margin-top:6px" onclick="useRung(${i})">Use This Rung</button></div>`).join('');
   openSheet(`<h3>Legal Reinforcement Ladder</h3><div class="why">${intro||'Every rung lists its prerequisite. The system will not call a mechanism “available” just because it exists — procedural posture governs.'}</div>${opts}
     <button class="btn ghost" onclick="closeSheet()">Close</button>`,true);
+}
+function useRung(i){
+  const l=LADDER[i];
+  openSheet(`<h3>${l.t}</h3><div class="why"><b>Prerequisite:</b> ${l.pre}<br><b>Purpose:</b> ${l.purpose}<br><b>Target:</b> ${l.target}<br><b>Evidence sought:</b> ${l.sought}<br><b>Escalation path:</b> ${l.next}</div>
+    ${fld('rg_note','Case-specific note (dates, records, people involved)','')}
+    <button class="btn red" onclick="logRung(${i})">Record This Escalation</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="closeSheet()">Cancel</button>`,true);
 }

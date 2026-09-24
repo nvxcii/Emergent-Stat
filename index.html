@@ -3,16 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>ExecEvidence — Guided Investigation System</title>  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="print.css" media="print">
-    <script defer src="js/part1.js"></script>
-  <script defer src="js/part2.js"></script>
-  <script defer src="js/part3.js"></script>
-  <script defer src="js/part4.js"></script>
-  <script defer src="js/part5.js"></script>
-  <script defer src="js/part6.js"></script>
-  <script defer src="js/part7.js"></script>
-  <script defer src="js/part8.js"></script>
+<title>ExecEvidence — Guided Investigation System</title>
+<link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 <div id="app">
@@ -84,6 +76,13 @@
       <div id="chainBody"></div>
     </section>
 
+    <!-- ============ NOTICE CHRONOLOGY ============ -->
+    <section class="view" id="v-notice">
+      <h2 class="vh">Notice Chronology</h2>
+      <div class="vsub">Service and claim-window record. Every entry below is a command on the shared CaseFlow ledger — the same hash chain as the Ledger tab, not a separate record.</div>
+      <div id="noticeBody"></div>
+    </section>
+
     <!-- ============ LEDGER ============ -->
     <section class="view" id="v-ledger">
       <h2 class="vh">Execution Ledger</h2>
@@ -95,10 +94,6 @@
     <section class="view" id="v-report">
       <h2 class="vh">Case Report</h2>
       <div class="vsub">Generated continuously by the investigation itself. Every line traces to its source.</div>
-      <div class="row2" style="margin-bottom:10px">
-        <button class="btn ghost" onclick="exportJSON()">Export Case (JSON)</button>
-        <button class="btn" onclick="window.print()">Print / PDF</button>
-      </div>
       <div id="reportBody"></div>
     </section>
   </main>
@@ -107,6 +102,7 @@
     <button data-v="v-dash" class="on"><span class="ic">◉</span>Today</button>
     <button data-v="v-actions"><span class="ic">▤</span>Actions<span class="bdg" id="bdgActions" style="display:none"></span></button>
     <button data-v="v-clocks"><span class="ic">⏱</span>Clocks<span class="bdg" id="bdgConflicts" style="display:none"></span></button>
+    <button data-v="v-notice"><span class="ic">⚖</span>Notice</button>
     <button data-v="v-chain"><span class="ic">⇄</span>Chain</button>
     <button data-v="v-ledger"><span class="ic">≣</span>Ledger</button>
     <button data-v="v-report"><span class="ic">▦</span>Report</button>
@@ -117,10 +113,25 @@
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
-
-
-
-
-
+<!-- CF-ADAPTER: shared ledger + Notice Chronology + Kimi compatibility adapter -->
+<script src="caseflow-ledger.js"></script>
+<script src="notice-chronology.js"></script>
+<script src="kimi-adapter.js"></script>
+<script src="idb-storage.js"></script>
+<script src="js/app-s1.js"></script>
+<script src="js/app-s2.js"></script>
+<script src="js/app-s3.js"></script>
+<script src="js/app-s4.js"></script>
+<script src="js/app-s5.js"></script>
+<script src="js/app-s6.js"></script>
+<script src="js/app-s7.js"></script>
+<script src="js/app-s8.js"></script>
+<style media="print">
+  .tabbar,.topbar,.btn{display:none !important}
+  #app{max-width:none;margin:0;box-shadow:none}
+  main{padding:10px;overflow:visible}
+  .view{display:block !important;page-break-before:always}
+  .view:first-child{page-break-before:avoid}
+</style>
 </body>
 </html>

@@ -1,3 +1,11 @@
+function openEscalate(intro){
+  const opts=LADDER.map((l,i)=>`<div class="card" style="margin-bottom:8px"><b style="font-size:12.5px">${i+1}. ${l.t}</b>
+    <div class="muted" style="margin:3px 0"><b style="color:var(--red)">Prerequisite:</b> ${l.pre}</div>
+    <div class="muted" style="font-size:11px"><b>Purpose:</b> ${l.purpose} · <b>Target:</b> ${l.target} · <b>Seeks:</b> ${l.sought}</div>
+    <button class="btn sm ghost" style="margin-top:6px" onclick="useRung(${i})">Use This Rung</button></div>`).join('');
+  openSheet(`<h3>Legal Reinforcement Ladder</h3><div class="why">${intro||'Every rung lists its prerequisite. The system will not call a mechanism “available” just because it exists — procedural posture governs.'}</div>${opts}
+    <button class="btn ghost" onclick="closeSheet()">Close</button>`,true);
+}
 function useRung(i){
   const l=LADDER[i];
   openSheet(`<h3>${l.t}</h3><div class="why"><b>Prerequisite:</b> ${l.pre}<br><b>Purpose:</b> ${l.purpose}<br><b>Target:</b> ${l.target}<br><b>Evidence sought:</b> ${l.sought}<br><b>Escalation path:</b> ${l.next}</div>
@@ -15,6 +23,8 @@ function logRung(i){
 /* ---------------- complete interaction ---------------- */
 function completeInteraction(){
   const L=S.live;if(!L)return;
+  /* CF-ADAPTER (migrated): an interaction with nothing captured cannot be locked as completed */
+  const cfg=CF.guardComplete(L);if(!cfg.ok){toast(cfg.reason);return;}
   L.endTs=Date.now();clearInterval(tick);document.getElementById('livePill').classList.remove('on');
   const role=PROTOCOL.find(p=>p.key===L.key)?.role||'Evidence-created contact';
   // record clock entry
@@ -34,26 +44,18 @@ function completeInteraction(){
     cn.gaps=6-Object.values(cn.fields).filter(v=>v&&v.trim()).length;
   }
   // log interview
-  logEvent('interview','Interview completed: '+(L.personName||'unidentified')+(L.personTitle?' ('+L.personTitle+')':'')+' — '+role+' · '+Math.round((L.endTs-L.startTs)/60000)+' min · '+(L.qa.filter(x=>x.q).length)+' questions');
+  logEvent('interview','Interview completed: '+(L.personName||'unidentified')+(L.personTitle?' ('+L.personTitle+')':'')+' — '+role+' · '+Math.round((L.endTs-L.startTs)/60000)+' min · '+(L.qa.filter(x=>x.q).length)+' questions',undefined,{validated:true});   /* CF-ADAPTER: passed the completion guard */
   // update action
   const a=S.actions.find(x=>x.key===L.key);
   if(a){a.interactions++;a.status='done';if(L.personName)a.personName=L.personName;if(L.personContact)a.personContact=L.personContact;}
   const c=S.nextCustom.find(n=>n.id===L.customId);if(c)c.done=true;
+  try{CF.recordOutcomes(L);}catch(err){cfBlocked();}   /* CF-ADAPTER (migrated): typed outcomes */
   S.interactions.push({...L});
   S.live=null;save();
   toast('Interaction locked into the ledger');
-  /* resume an interrupted live interaction */
-if(S.live && !S.live.endTs){
-  document.getElementById('liveMeta').textContent=nodeLabel(S.live.key)+' · '+fmtTs(S.live.startTs)+' (resumed)';
-  document.getElementById('livePill').classList.add('on');
-  clearInterval(tick);tick=setInterval(()=>{
-    const s=Math.floor((Date.now()-S.live.startTs)/1000);
-    document.getElementById('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-  },500);
-  renderLiveForm();
-  renderDash();
-  showView('v-live');
-} else { showView('v-dash'); }renderDash();
+  /* CF-ADAPTER: the page-load resume block had been pasted here; since S.live is null at this
+     point it always took the else-branch, so this is behaviour-identical. */
+  showView('v-dash');renderDash();
 }
 
 /* ---------------- clocks ---------------- */
@@ -77,7 +79,9 @@ function renderClocks(){
       <div class="muted" style="font-size:10px;margin-bottom:6px">Template: ${c.steps.join(' → ')}</div>
       ${entries.map(e=>{
         const cf=conf.find(x=>x.label===e.label&&x.clock===k);
-        return `<div class="tlentry ${cf?'conflict':''}"><div class="d">${esc(e.label)}</div><div class="m">${esc(e.date||'no date')} · logged ${fmtTs(e.ts)}</div>${cf?`<div class="conflictnote">⚠ ${cf.why}</div>`:''}</div>`;
+        /* CF-ADAPTER: unverified dates are labelled, and conflicts computed from them are provisional */
+        const posUnv=S.clockEntries.possession.some(p=>p.unverified&&p.date===S.clockDates.possession&&(!p.prop_id||CF.propositionGate(p.prop_id)!=='passed'));
+        return `<div class="tlentry ${cf?'conflict':''}"><div class="d">${esc(e.label)}</div><div class="m">${esc(e.date||'no date')} · logged ${fmtTs(e.ts)}</div>${e.unverified?'<div class="cf-unv">UNVERIFIED — no source attached; not an anchor</div>':''}${cf?`<div class="conflictnote">⚠ ${posUnv?'PROVISIONAL (possession date unverified): ':''}${cf.why}</div>`:''}</div>`;
       }).join('')||'<div class="muted" style="font-size:11.5px">No entries yet. Log clock events during live interactions or tap + Entry.</div>'}
     </div>`;}).join('');
   updateBadges(conf.length,S.actions.filter(a=>a.status==='pending').length+S.nextCustom.filter(n=>!n.done).length);

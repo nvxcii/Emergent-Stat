@@ -1,4 +1,114 @@
 
+/* ============================ PART 2: EXECUTION ENGINE ============================ */
+
+/* ---------------- dashboard ---------------- */
+function renderDash(){
+  const has=!!(S.meta.name||S.meta.property);
+  document.getElementById('dashNoCase').style.display=has?'none':'block';
+  document.getElementById('dashBody').style.display=has?'block':'none';
+  document.getElementById('caseName').textContent=S.meta.name||'Untitled Case';
+  document.getElementById('caseSub').textContent=[S.meta.property,S.meta.unit].filter(Boolean).join(' · ')||'No property set';
+  if(!has)return;
+
+  const pend=S.actions.filter(a=>a.status==='pending');
+  const done=S.actions.filter(a=>a.status==='done').length;
+  const customOpen=S.nextCustom.filter(n=>!n.done);
+  document.getElementById('stDone').textContent=done;
+  document.getElementById('stOpen').textContent=pend.length+customOpen.length;
+  document.getElementById('stEvents').textContent=S.events.length;
+  document.getElementById('stPeople').textContent=S.persons.length;
+
+  // next action
+  const na=document.getElementById('nextAction');
+  let target=customOpen[0]||pend[0];
+  if(!target){na.innerHTML='<div class="k">INVESTIGATION</div><h3>All protocol steps complete</h3><p>Unresolved branches, follow-ups, and escalation remain below. Keep logging until every clock aligns.</p>';}
+  else{
+    const isCustom=!PROTOCOL.some(p=>p.key===target.key);
+    const roleName=isCustom?target.role:(PROTOCOL.find(p=>p.key===target.key)?.role||target.key);
+    na.innerHTML=`<div class="k">NEXT RECOMMENDED ACTION</div><h3>${esc(roleName)}</h3>
+    <p>${isCustom?'Created by evidence during the investigation.':'Protocol step '+target.key+' of A–F.'} ${esc(target.where||'')}</p>
+    <button class="btn" style="background:#ffd166;color:var(--navy-deep)" onclick="event.stopPropagation();openAction('${target.key}','${isCustom?target.id:''}')">Open Action Card →</button>`;
+  }
+  // progress
+  const total=S.actions.length+S.nextCustom.length||1;
+  document.getElementById('progBar').style.width=Math.round(100*(done+S.nextCustom.filter(n=>n.done).length)/total)+'%';
+
+  // unresolved branches
+  const conf=computeConflicts();
+  const overdue=S.followUps.filter(f=>f.status==='open'&&f.due&&f.due<new Date().toISOString().slice(0,10));
+  let bw='';
+  if(conf.length)bw+=`<div class="branchwarn"><b>⏱ ${conf.length} clock conflict${conf.length>1?'s':''}</b> — chronological mismatch flagged. Investigate before relying on either date.</div>`;
+  if(overdue.length)bw+=`<div class="branchwarn"><b>↻ ${overdue.length} overdue follow-up${overdue.length>1?'s':''}</b> — oldest: ${esc(overdue[0].desc||overdue[0].due)}</div>`;
+  const contra=S.propositions.filter(p=>p.status==='CONTRADICTED').length;
+  if(contra)bw+=`<div class="branchwarn"><b>⚠ ${contra} unresolved contradiction${contra>1?'s':''}</b> — both accounts preserved in the contradiction register.</div>`;
+  document.getElementById('dashBranches').innerHTML=bw;
+
+  // clocks summary
+  document.getElementById('dashClocks').innerHTML=Object.entries(CLOCKS).map(([k,c])=>{
+    const n=S.clockEntries[k].length;
+    return `<div class="clockrow" onclick="showView('v-clocks')"><span class="dot" style="background:${c.color}"></span>
+    <span class="nm">${c.name}</span>${conf.some(x=>x.clock===k)?'<span class="flag">⚠ CONFLICT</span>':''}<span class="ct">${n}</span></div>`;
+  }).join('');
+  updateBadges(conf.length,pend.length+customOpen.length);
+}
+function goNextAction(){
+  const pend=S.actions.filter(a=>a.status==='pending');
+  const customOpen=S.nextCustom.filter(n=>!n.done);
+  const t=customOpen[0]||pend[0];
+  if(t)openAction(t.key, !PROTOCOL.some(p=>p.key===t.key)?t.id:'');
+}
+function updateBadges(conflicts,openActions){
+  const b1=document.getElementById('bdgConflicts');b1.style.display=conflicts?'flex':'none';b1.textContent=conflicts;
+  const b2=document.getElementById('bdgActions');b2.style.display=openActions?'flex':'none';b2.textContent=openActions;
+}
+
+/* ---------------- actions ---------------- */
+function renderActions(){
+  let h='';
+  const open=S.nextCustom.filter(n=>!n.done);
+  if(open.length){
+    h+=`<div class="newnode"><b>Evidence-created actions (${open.length})</b> — the investigation grew these nodes. Clear them before the next protocol step.</div>`;
+    open.forEach(n=>{h+=`<div class="acard" onclick="openAction('${n.key}','${n.id}')">
+      <div class="top"><span class="lt" style="background:var(--orange)">★</span><h3>${esc(n.role)}</h3></div>
+      <div class="where">${esc(n.where||'Location identified during investigation')} · from ${esc(n.fromSummary||'evidence')}</div>
+      <div class="tags"><span class="pill orange">EVIDENCE-CREATED</span></div></div>`;});
+  }
+  h+=S.actions.map(a=>{
+    const p=PROTOCOL.find(x=>x.key===a.key);
+    return `<div class="acard ${a.status==='done'?'done':''}" onclick="openAction('${a.key}','')">
+      <div class="top"><span class="lt">${a.key}</span><h3>${esc(p.role)}</h3><span class="pill ${a.status==='done'?'green':'blue'}">${a.status==='done'?'DONE':'OPEN'}</span></div>
+      <div class="where">${esc(p.where)}</div>
+      <div class="tags"><span class="pill gray">${a.interactions} interaction${a.interactions===1?'':'s'}</span>${a.personName?`<span class="pill purple">${esc(a.personName)}</span>`:''}</div>
+    </div>`;}).join('');
+  document.getElementById('actionList').innerHTML=h;
+}
+
+function openAction(key,customId){
+  const custom=customId?S.nextCustom.find(n=>n.id===customId):null;
+  const a=S.actions.find(x=>x.key===key);
+  const p=custom?{role:custom.role,where:custom.where||'',objective:'Follow up on evidence obtained during the investigation.',briefing:'Evidence-created node. Work it like any protocol card: open the record, capture the routing, create the next node.',script:'"I\'m following up on [the matter referenced in my conversation with '+esc(custom.fromSummary||'your office')+']. I need [record / name / destination] confirmed in writing."',questions:['Can you confirm what was discussed/promised?','Who is responsible for the next step?','When will I have it in writing?'],records:['Whatever the originating evidence pointed to'],reinforcement:'Same-day written confirmation · Log everything.',evidence:'Photograph or screenshot anything shown to you.',tips:['If they do not know, ask who would know.','Document the exact wording of a refusal.']}:PROTOCOL.find(x=>x.key===key);
+  const past=S.interactions.filter(i=>i.key===key);
+  document.getElementById('actionDetail').innerHTML=`
+    <div class="card" style="border-color:var(--teal)">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
+        <span class="lt" style="width:34px;height:34px;border-radius:50%;background:${custom?'var(--orange)':'var(--teal)'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex:none">${custom?'★':key}</span>
+        <div><h3 style="margin:0">${esc(p.role)}</h3><div class="muted" style="font-size:11px">${esc(p.where)}</div></div>
+      </div>
+      ${p.contact?`<div class="muted" style="font-size:11.5px;margin:4px 0">Contact: ${esc(p.contact)}</div>`:''}
+      <p style="font-size:12.5px"><b>Objective:</b> ${esc(p.objective)}</p>
+    </div>
+    <div class="sec"><h4>30-Second Briefing</h4><p style="font-size:12.5px">${esc(p.briefing)}</p></div>
+    <div class="sec"><h4>Approach Script</h4><div class="scriptbox">${esc(p.script)}</div></div>
+    <div class="sec"><h4>Questions Relevant to This Person's Authority</h4><ul>${p.questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
+    <div class="sec"><h4>Records to Request</h4><ul>${p.records.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>
+    <div class="sec" style="border-left:4px solid var(--red)"><h4 style="color:var(--red)">Reinforcement Available Here</h4><p style="font-size:12px">${esc(p.reinforcement)}</p></div>
+    <div class="sec"><h4>Evidence to Preserve From This Encounter</h4><p style="font-size:12px">${esc(p.evidence)}</p></div>
+    ${p.tips.map(t=>`<div class="tip"><b>Context Tip</b>${esc(t)}</div>`).join('')}
+    ${past.length?`<div class="sec"><h4>Past Interactions (${past.length})</h4>${past.map(i=>`<div class="muted" style="font-size:11.5px;padding:3px 0">• ${fmtTs(i.startTs)} → ${esc(i.personName||'unidentified')} · outcome: ${esc(i.outcomeLabel||'completed')}</div>`).join('')}</div>`:''}
+    <button class="btn teal" onclick="startInteraction('${key}','${customId||''}')">Begin Interaction — Start Timestamp</button>`;
+  showView('v-action');
+}
+
 /* ---------------- live interaction ---------------- */
 let tick=null;
 function nodeLabel(key){const p=PROTOCOL.find(p=>p.key===key); if(p) return p.role; const n=S.nextCustom.find(n=>n.key===key); return n?n.role:key;}
@@ -92,84 +202,4 @@ function abandonLive(){
   try{CF.recordAbandon(S.live);}catch(err){cfBlocked();}   /* CF-ADAPTER (migrated) */
   logEvent('contact','Attempted contact, no completed interaction: '+(PROTOCOL.find(p=>p.key===S.live.key)?.role||S.live.key),undefined,{validated:true});
   S.live=null;clearInterval(tick);document.getElementById('livePill').classList.remove('on');save();showView('v-actions');toast('Attempted contact logged');
-}
-/* ============================ PART 3: BRANCHING + NODES + CLOCKS + LEDGER ============================ */
-
-/* ---------------- outcome branches ---------------- */
-function addBranch(type,summary,data){
-  S.live.branches=S.live.branches||[];
-  S.live.branches.push({type,summary,data:data||{}});
-  logEvent(type==='refusal'?'refusal':type==='norecord'?'nonexist':type==='disposed'?'chain':type==='dept'||type==='vendor'||type==='names'||type==='dontknow'?'branch':'record',summary,{});
-}
-function fld(id,label,ph){return `<div class="field"><label>${label}</label><input id="${id}" placeholder="${ph||''}"></div>`;}
-
-function openOutcome(type){
-  const o=OUTCOMES[type];
-  let body='';
-  if(type==='dontknow'){body=fld('br_who','Who would know? (name if given)','e.g. Maria, the facilities supervisor')+fld('br_title','Their title / role','');}
-  else if(type==='dept'){body=fld('br_dept','Department name','')+fld('br_person','Contact person','')+fld('br_phone','Telephone','')+fld('br_email','Email','')+fld('br_loc','Location','');}
-  else if(type==='cannotrelease'){body=fld('br_cust','Authorized records custodian (name/title)','')+fld('br_proc','Formal request procedure','e.g. written request to legal dept, 10-day response');}
-  else if(type==='disposed'){body=`<div class="optgrid" id="dispGrid">${DISPOSITION_TYPES.map(d=>`<button onclick="selDisp(this)">${d}</button>`).join('')}</div>`+fld('br_auth','Who authorized?','')+fld('br_when','When? (date)','')+fld('br_dest','Destination','e.g. landfill, auction house, Warehouse B')+fld('br_rec','Underlying record (number/type)','');}
-  else if(type==='vendor'){body=fld('br_vname','Vendor name','')+fld('br_wo','Work order / invoice number','')+fld('br_vphone','Phone / location','');}
-  else if(type==='norecord'){body=fld('br_rec2','Which record allegedly does not exist?','e.g. inventory of unit 4B')+fld('br_by','Who said so (name/title)','');}
-  else if(type==='refusal'){body=fld('br_word','Exact wording of the refusal','Quote them verbatim')+fld('br_by2','Who refused (name/title)','');}
-  else if(type==='names'){body=fld('br_nm','Name mentioned','')+fld('br_nmrole','Their role / why mentioned','');}
-  else if(type==='cooperative'){body=fld('br_got','What was provided / confirmed?','');}
-  openSheet(`<h3>${o.label}</h3><div class="why">${o.why}</div>${body}
-    <button class="btn ${o.color==='red'?'red':o.color==='teal'?'teal':''}" onclick="saveOutcome('${type}')">Create Event & Next Node</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="closeSheet()">Cancel</button>`,true);
-}
-let dispSel='';
-function selDisp(b){document.querySelectorAll('#dispGrid button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');dispSel=b.textContent;}
-
-function saveOutcome(type){
-  const g=id=>document.getElementById(id)?.value.trim()||'';
-  switch(type){
-    case 'dontknow':{
-      const who=g('br_who'),title=g('br_title');
-      if(who){addPerson(who,title||'Person identified by referral');createCustomAction(who,title||'Referred contact','Referred by '+(S.live.personName||'unknown')+' during live interaction','');
-        addBranch(type,'“I don’t know” → referral: '+who+(title?' ('+title+')':''));}
-      else addBranch(type,'“I don’t know” — no referral obtained');break;}
-    case 'dept':{
-      const d=g('br_dept');if(d){S.nodes.push({id:uid(),type:'department',label:d,ts:Date.now()});}
-      if(g('br_person')){addPerson(g('br_person'),d||'Department contact');createCustomAction(g('br_person'),d||'Department contact','Department routing: '+d,'');}
-      addBranch(type,'Routed to department: '+d+(g('br_person')?' — contact: '+g('br_person'):'')+(g('br_phone')?' — '+g('br_phone'):''));
-      break;}
-    case 'cannotrelease':{
-      const c=g('br_cust');if(c){addPerson(c,'Records custodian');createCustomAction(c,'Records custodian','Cannot-release path from '+(S.live.personName||'contact'),'');}
-      addBranch(type,'Record not releasable by this person'+(c?' — authorized custodian: '+c:'')+(g('br_proc')?' — procedure: '+g('br_proc'):''));
-      toast('If records cannot be released — identify the custodian ✓');break;}
-    case 'disposed':{
-      const t=dispSel||'Unknown';
-      addBranch(type,'Property DISPOSED — '+t+' · by: '+(g('br_auth')||'?')+' · when: '+(g('br_when')||'?')+' → '+(g('br_dest')||'destination unknown')+' · record: '+(g('br_rec')||'none cited'),
-        {disp:t,auth:g('br_auth'),when:g('br_when'),dest:g('br_dest'),rec:g('br_rec')});
-      addProp('Property was '+t.toLowerCase()+(g('br_when')?' on or around '+g('br_when'):'')+(g('br_auth')?' — authorized by '+g('br_auth'):''),'PENDING');
-      if(g('br_when'))addClock('property','Final disposition ('+t+')',g('br_when'));
-      if(/stored/i.test(t)&&g('br_dest')){S.nodes.push({id:uid(),type:'propertyLocation',label:g('br_dest'),ts:Date.now()});createCustomAction('Retrieve property — '+g('br_dest'),'Property location','Disposition branch: stored at '+g('br_dest'),'');}
-      break;}
-    case 'vendor':{
-      const v=g('br_vname');if(v){S.nodes.push({id:uid(),type:'vendor',label:v,ts:Date.now()});addPerson(v,'Vendor / hauler / storage');createCustomAction(v,'Vendor','Vendor identified by '+(S.live.personName||'contact')+(g('br_wo')?' — work order '+g('br_wo'):''),'');}
-      if(g('br_wo')){S.nodes.push({id:uid(),type:'workOrder',label:'Work order '+g('br_wo'),ts:Date.now()});addProp('Work order '+g('br_wo')+' exists and is associated with this unit','PENDING');}
-      addBranch(type,'Vendor handled property: '+(v||'unnamed')+(g('br_wo')?' — WO/invoice '+g('br_wo'):''));break;}
-    case 'norecord':{
-      addBranch(type,'Formal Record Nonexistence: “'+(g('br_rec2')||'unspecified record')+' does not exist” — asserted by '+(g('br_by')||'unidentified'));
-      addProp('No record of '+(g('br_rec2')||'the requested item')+' exists (asserted '+(g('br_by')?'by '+g('br_by'):'verbally')+')','UNEXPLAINED');
-      toast('A written “record does not exist” is itself evidence — request it in writing');break;}
-    case 'refusal':{
-      addBranch(type,'REFUSAL — “'+(g('br_word')||'refusal not quoted')+'” — by '+(g('br_by2')||'unidentified person'));
-      logEvent('refusal','Refusal preserved verbatim: "'+(g('br_word')||'')+'" by '+(g('br_by2')||'?'));
-      addProp('A request was refused: "'+(g('br_word')||'')+'"','DOCUMENTED');
-      setTimeout(()=>openEscalate('A refusal was documented. Escalation is a deliberate choice — the ladder below shows prerequisites, not shortcuts.'),400);
-      break;}
-    case 'names':{
-      const n=g('br_nm');if(n){addPerson(n,g('br_nmrole')||'Mentioned during investigation');createCustomAction(n,g('br_nmrole')||'Mentioned contact','Named during live interaction','');}
-      addBranch(type,'Name mentioned: '+n+(g('br_nmrole')?' — '+g('br_nmrole'):''));break;}
-    case 'cooperative':{
-      addBranch(type,'Cooperative — obtained: '+(g('br_got')||'answers (see Q/A log)'));
-      addProp('Information provided during this encounter (see Q/A): '+(g('br_got')||'recorded in interaction'),'DOCUMENTED');break;}
-  }
-  save();closeSheet();
-  const btns=document.querySelectorAll('#liveForm .outcomes button');
-  toast('Event created · node added · next action queued');
-  renderLiveForm();
 }

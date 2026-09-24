@@ -33,6 +33,11 @@
   // anything else stays an untyped Kimi event rather than being coerced.
   const OUTCOME_MAP = { refusal: 'refusal', norecord: 'no_record_exists', dept: 'redirected', vendor: 'redirected' };
 
+  function commonPrefixLen(a, b) {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i].seq === b[i].seq && a[i].hash === b[i].hash) i++;
+    return i;
+  }
   function adapterError(code, message) { const e = new Error(message); e.code = code; e.isAdapter = true; return e; }
   const h = (v) => Ledger.hashOf(JSON.stringify(v === undefined ? null : v));
   const text = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -63,10 +68,14 @@
     let blocked = null;             // integrity failure description, if any
     let baseline = {};              // collection -> { digest, items }
     let validated = {};             // collection -> digest produced by a validated command
+    let storageSnapshot = null;     // JSON string of the ledger entries we last read from or wrote to storage
+    let lastConflict = null;        // set when persist() detects another writer touched storage since storageSnapshot
 
     const version = () => c.state().entries.length;
 
     /* ---------- low-level: adapter-owned commands, atomic + idempotent ---------- */
+    const KNOWN_CLOCKS = ['possession', 'turnover', 'property', 'notice'];
+
     const KIMI_VALIDATORS = {
       'kimi.event': (p) => {
         if (!text(p.event_type) || p.event_type.length > 40) throw adapterError('K_EVENT_TYPE', 'kimi.event needs an event_type (≤ 40 chars).');
@@ -82,6 +91,23 @@
       },
       'kimi.legacy_import': (p) => {
         if (!text(p.summary)) throw adapterError('K_IMPORT', 'Imported legacy event has no summary.');
+      },
+      /* ---- B: migrated writers (structured facts, replacing generic S mutation + legacy_write) ---- */
+      'kimi.person_add': (p) => {
+        if (!text(p.name)) throw adapterError('K_PERSON_NAME', 'A person needs a name.');
+        if (!text(p.role)) throw adapterError('K_PERSON_ROLE', 'A person needs a role.');
+      },
+      'kimi.clock_entry': (p) => {
+        if (KNOWN_CLOCKS.indexOf(p.clock) < 0) throw adapterError('K_CLOCK_LANE', 'clock must be one of ' + KNOWN_CLOCKS.join(', ') + '.');
+        if (!text(p.label)) throw adapterError('K_CLOCK_LABEL', 'A clock entry needs a label.');
+      },
+      'kimi.chain_answer': (p) => {
+        if (!Number.isInteger(p.stage_index) || p.stage_index < 0) throw adapterError('K_CHAIN_STAGE', 'stage_index must be a non-negative integer.');
+        if (!text(p.question)) throw adapterError('K_CHAIN_Q', 'question is required.');
+      },
+      'kimi.escalation': (p) => {
+        if (!Number.isInteger(p.rung) || p.rung < 0) throw adapterError('K_ESC_RUNG', 'rung must be a non-negative integer.');
+        if (!text(p.title)) throw adapterError('K_ESC_TITLE', 'An escalation needs the rung title.');
       }
     };
 
@@ -179,16 +205,65 @@
       S.events = projectEvents();
       takeBaseline(S);
       if (status !== 'ledger') persist(S);
+      storageSnapshot = JSON.stringify(c.state().entries);
       return { status, version: version(), head: c.verify().head };
     }
 
     function persist(S) {
       if (blocked) return false;
+      // Concurrency guard: if another tab/device/session wrote to storage since we
+      // last read or wrote it, we refuse to overwrite. Writing blind here would
+      // silently drop whatever they appended (a fork, not a merge).
+      if (storageSnapshot !== null) {
+        const onDisk = storage.getItem(ledgerKey);
+        if (onDisk !== null && onDisk !== storageSnapshot) {
+          let remoteEntries;
+          try { remoteEntries = JSON.parse(onDisk); } catch (e) { remoteEntries = null; }
+          lastConflict = { remoteEntries, localEntries: c.state().entries, detectedAt: new Date().toISOString() };
+          return false;
+        }
+      }
+      lastConflict = null;
       detectLegacyWrites(S);
       const snapshot = Object.assign({}, S, { events: [], _ledger: { key: ledgerKey, seq: version(), head: c.verify().head } });
       storage.setItem(ledgerKey, JSON.stringify(c.state().entries));
       storage.setItem(appKey, JSON.stringify(snapshot));
+      storageSnapshot = JSON.stringify(c.state().entries);
       return true;
+    }
+
+    /* Conflict resolution: the ledger never guesses which branch is "right".
+       The caller (operator, or a skill acting on the operator's behalf) chooses. */
+    function resolveConflictKeepRemote(S) {
+      if (!lastConflict) throw adapterError('K_NO_CONFLICT', 'There is no pending conflict to resolve.');
+      const remote = lastConflict.remoteEntries || [];
+      const local = lastConflict.localEntries || [];
+      const shared = commonPrefixLen(local, remote);
+      const dropped = local.slice(shared); // our local-only commands the remote branch does not have
+      c = Ledger.createCase({ id: opts.caseId || 'kimi-case', entries: remote });
+      m = Notice.createNoticeModule(c);
+      S.events = projectEvents();
+      takeBaseline(S);
+      storageSnapshot = JSON.stringify(c.state().entries);
+      lastConflict = null;
+      return { adopted: remote.length, droppedLocalCommands: dropped.map((e) => ({ seq: e.seq, command: e.command, at: e.at })) };
+    }
+    function resolveConflictKeepLocal(S) {
+      if (!lastConflict) throw adapterError('K_NO_CONFLICT', 'There is no pending conflict to resolve.');
+      const remote = lastConflict.remoteEntries || [];
+      const local = lastConflict.localEntries || [];
+      const shared = commonPrefixLen(local, remote);
+      const overwritten = remote.slice(shared);
+      lastConflict = null;
+      persistForce(S);
+      return { keptLocal: local.length, overwrittenRemoteCommands: overwritten.map((e) => ({ seq: e.seq, command: e.command, at: e.at })) };
+    }
+    function persistForce(S) {
+      detectLegacyWrites(S);
+      const snapshot = Object.assign({}, S, { events: [], _ledger: { key: ledgerKey, seq: version(), head: c.verify().head } });
+      storage.setItem(ledgerKey, JSON.stringify(c.state().entries));
+      storage.setItem(appKey, JSON.stringify(snapshot));
+      storageSnapshot = JSON.stringify(c.state().entries);
     }
 
     /* ---------- routed actions ---------- */
@@ -273,10 +348,36 @@
       return L.join('\n');
     }
 
+    /* ---- B: migrated writer helpers. Each records a structured ledger fact
+       and returns it; the caller still owns pushing it into S so the existing
+       render functions need no changes. Caller must markValidated() the
+       touched collection so persist() does not also log it as a legacy write. */
+    function addPerson(name, role, source_ref) {
+      const person_id = uid();
+      run('kimi.person_add', { person_id, name, role, source_ref: source_ref || '' });
+      return { id: person_id, name, role, ts: Date.now(), source: 'investigation' };
+    }
+    function recordClockEntry(clock, label, date, source_ref) {
+      const entry_id = uid();
+      const unverified = !text(source_ref);
+      run('kimi.clock_entry', { entry_id, clock, label, date: date || '', source_ref: source_ref || '', unverified });
+      return { id: entry_id, label, date: date || '', ts: Date.now(), src: source_ref || '', unverified };
+    }
+    function recordChainAnswer(stage_index, question, value, source_ref) {
+      run('kimi.chain_answer', { stage_index, question, value: value || '', source_ref: source_ref || '' });
+    }
+    function recordEscalation(rung, title, note, meta) {
+      const escalation_id = uid();
+      run('kimi.escalation', { escalation_id, rung, title, note: note || '', meta: meta || {} });
+      return { id: escalation_id, rung, title, note: note || '', ts: Date.now() };
+    }
+
     return {
       boot, persist, record, annotate, setupDate, guardComplete, recordOutcomes, recordAbandon, markValidated,
+      addPerson, recordClockEntry, recordChainAnswer, recordEscalation,
       events: projectEvents, legacyWriteCount, propositionGate, resumePacket, resumeText,
       verify: () => c.verify(), version, get blocked() { return blocked; },
+      get lastConflict() { return lastConflict; }, resolveConflictKeepRemote, resolveConflictKeepLocal,
       _case: () => c, _module: () => m
     };
   }

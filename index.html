@@ -76,6 +76,13 @@
       <div id="chainBody"></div>
     </section>
 
+    <!-- ============ NOTICE CHRONOLOGY ============ -->
+    <section class="view" id="v-notice">
+      <h2 class="vh">Notice Chronology</h2>
+      <div class="vsub">Service and claim-window record. Every entry below is a command on the shared CaseFlow ledger — the same hash chain as the Ledger tab, not a separate record.</div>
+      <div id="noticeBody"></div>
+    </section>
+
     <!-- ============ LEDGER ============ -->
     <section class="view" id="v-ledger">
       <h2 class="vh">Execution Ledger</h2>
@@ -95,6 +102,7 @@
     <button data-v="v-dash" class="on"><span class="ic">◉</span>Today</button>
     <button data-v="v-actions"><span class="ic">▤</span>Actions<span class="bdg" id="bdgActions" style="display:none"></span></button>
     <button data-v="v-clocks"><span class="ic">⏱</span>Clocks<span class="bdg" id="bdgConflicts" style="display:none"></span></button>
+    <button data-v="v-notice"><span class="ic">⚖</span>Notice</button>
     <button data-v="v-chain"><span class="ic">⇄</span>Chain</button>
     <button data-v="v-ledger"><span class="ic">≣</span>Ledger</button>
     <button data-v="v-report"><span class="ic">▦</span>Report</button>
@@ -109,15 +117,15 @@
 <script src="caseflow-ledger.js"></script>
 <script src="notice-chronology.js"></script>
 <script src="kimi-adapter.js"></script>
-<script src="js/app-a-1a.js"></script>
-<script src="js/app-a-1b.js"></script>
-<script src="js/app-a-2b.js"></script>
-<script src="js/app-b-1.js"></script>
-<script src="js/app-b-2.js"></script>
-<script src="js/app-c-1.js"></script>
-<script src="js/app-c-2.js"></script>
-<script src="js/app-d-1.js"></script>
-<script src="js/app-d-2.js"></script>
+<script src="idb-storage.js"></script>
+<script src="js/app-s1.js"></script>
+<script src="js/app-s2.js"></script>
+<script src="js/app-s3.js"></script>
+<script src="js/app-s4.js"></script>
+<script src="js/app-s5.js"></script>
+<script src="js/app-s6.js"></script>
+<script src="js/app-s7.js"></script>
+<script src="js/app-s8.js"></script>
 <style media="print">
   .tabbar,.topbar,.btn{display:none !important}
   #app{max-width:none;margin:0;box-shadow:none}

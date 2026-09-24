@@ -6,9 +6,9 @@
  
 -    let entries = [];   // LedgerEntry[]
 +    let entries = [];   // LedgerEntry[]  (restored below when opts.entries is given)
-     let sources = {};   // id -> Source
-     let props = {};     // id -> Proposition
-     let events = {};    // id -> Event
+    let sources = {};   // id -> Source
+    let props = {};     // id -> Proposition
+    let events = {};    // id -> Event
 @@ -181,16 +181,23 @@
        payload = payload || {};
        cmd_id = cmd_id || null;
@@ -33,12 +33,12 @@
 -      const entry = emit({ at: now(), actor: actor || 'operator', command: type, payload: p, annotates: payload.annotates || null });
 +      // cmd_id and fingerprint sit outside the hashed body so existing chains stay verifiable.
 +      const entry = emit({ at: now(), actor: actor || 'operator', command: type, payload: p, annotates: payload.annotates || null, cmd_id: cmd_id, fingerprint: fp });
-       if (cmd_id) cmdIndex[cmd_id] = entry.seq;
-       apply(entry);
-       return entry;
+      if (cmd_id) cmdIndex[cmd_id] = entry.seq;
+     apply(entry);
+     return entry;
 @@ -313,10 +320,48 @@
        };
- 
+
 -    return { caseId, template, append, project, verify, state,
 +    /* ---------------- atomic multi-entry commands ----------------
 +       A domain command may append several entries (e.g. notice.create +
@@ -80,8 +80,8 @@
 +
 +    return { caseId, template, append, project, verify, state, transaction,
       byCmdId: (id) => (cmdIndex[id] != null ? entries[cmdIndex[id] - 1] : null),
-      constants: { EVIDENCE_STATES, GATES } };
-   }
+     constants: { EVIDENCE_STATES, GATES } };
+  }
 
 -  return { createCase, sha256, EVIDENCE_STATES, GATES };
 +  return { createCase, sha256, hashOf, EVIDENCE_STATES, GATES };

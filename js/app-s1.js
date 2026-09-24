@@ -1,3 +1,4 @@
+
 /* =====================================================================
    EXEC EVIDENCE — guided investigation + contemporaneous evidence system
    Principle: Guide → Execute → Capture → Timestamp → Link → Verify →
@@ -9,7 +10,7 @@ const CHAIN_TEMPLATE = ['Unit (former apartment)','Pre-Clearance Inspection','As
 const SIX_Q = ['Who?','When?','Where?','Under whose authority?','What record proves it?','Next custodian?'];
 
 const CLOCKS = {
-  possession:{name:'Possession Clock',color:'#2f6fb2',steps:['Sheriff / internal possession','Possession entry (records)']},
+  possession:{name:'Possession Clock',color:'#2f6fb2',steps:['Sheriff / internal possession','Possession entry (records)]'},
   turnover:{name:'Turnover Clock',color:'#4caf50',steps:['Inspection','Turnover / work order opened','Personnel / vendor assigned','Unit entered & cleared','Completed / closed']},
   property:{name:'Property Clock',color:'#f28c28',steps:['Belongings encountered','Described / photo / inventory','Moved','Transported','Storage','Retrieval opportunity','Valuation','Final disposition']},
   notice:{name:'Notice Clock',color:'#7b4fa6',steps:['Property notice prepared','Service / mailing','Retrieval location identified','Claim deadline','Disposition date']}
@@ -84,17 +85,3 @@ const OUTCOMES = {
   refusal:{label:'⛔ Refusal',color:'red',why:'Preserve exactly what was said, by whom, and present the escalation path.'},
   names:{label:'＋ Names mentioned',color:'navy',why:'One tap turns a mentioned name into a tracked person node.'}
 };
-
-const DISPOSITION_TYPES = ['Discarded (trash)','Sold (auction/sale)','Donated','Transferred','Stored','Retained (by employee/property)','Destroyed','Unknown'];
-
-const LADDER = [
- {t:'Written records request',pre:'Any stage. No case required.',purpose:'Obtain records voluntarily.',target:'Records custodian',sought:'Work orders, notices, YARDI audit, vendor records',next:'If unanswered → preservation notice → formal demand'},
- {t:'Preservation notice',pre:'Any stage. No case required.',purpose:'Prevent destruction of records.',target:'Property management leadership',sought:'Written confirmation of preservation',next:'If ignored → formal demand; if case filed → discovery'},
- {t:'Formal demand',pre:'Before or without litigation.',purpose:'Create a documented refusal or compliance.',target:'Leadership / designated legal channel',sought:'Records or a written refusal',next:'Refusal → preserves the issue for litigation'},
- {t:'Interrogatories (Special)',pre:'Civil action pending + discovery available.',purpose:'Compel answers from parties under oath.',target:'Opposing party',sought:'Identification of individuals, facts, authorizations',next:'Insufficient answers → meet-and-confer → motion to compel'},
- {t:'Request for Production',pre:'Civil action pending.',purpose:'Compel documents and things.',target:'Opposing party',sought:'Records, photos, manifests, communications',next:'Non-production → motion to compel'},
- {t:'Request for Admission',pre:'Civil action pending.',purpose:'Lock down facts as admitted or disputed.',target:'Opposing party',sought:'Admissions: dates, custody, disposition',next:'Denial without evidence → trial issue preserved'},
- {t:'Business-records subpoena (SUBP-010)',pre:'Civil action pending. Non-party holder.',purpose:'Obtain records from non-parties (vendors, platforms).',target:'Vendor / records custodian (non-party)',sought:'Manifests, invoices, storage/disposal records',next:'Objection → motion to compel compliance'},
- {t:'Deposition subpoena / deposition',pre:'Civil action pending.',purpose:'Testimony under oath; lock in accounts.',target:'Individuals with personal knowledge',sought:'Who, when, authority, destination',next:'Contradictions → contradiction register entries'},
- {t:'Motion to compel',pre:'Civil action pending; prior attempt made.',purpose:'Judicial enforcement of discovery.',target:'The court',sought:'Order compelling production or answers',next:'Non-compliance → sanctions motions'}
-];

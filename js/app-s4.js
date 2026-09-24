@@ -1,16 +1,103 @@
 
+/* ============================ PART 3: BRANCHING + NODES + CLOCKS + LEDGER ============================ */
+
+/* ---------------- outcome branches ---------------- */
+function addBranch(type,summary,data){
+  S.live.branches=S.live.branches||[];
+  S.live.branches.push({type,summary,data:data||{}});
+  logEvent(type==='refusal'?'refusal':type==='norecord'?'nonexist':type==='disposed'?'chain':type==='dept'||type==='vendor'||type==='names'||type==='dontknow'?'branch':'record',summary,{});
+}
+function fld(id,label,ph){return `<div class="field"><label>${label}</label><input id="${id}" placeholder="${ph||''}"></div>`;}
+
+function openOutcome(type){
+  const o=OUTCOMES[type];
+  let body='';
+  if(type==='dontknow'){body=fld('br_who','Who would know? (name if given)','e.g. Maria, the facilities supervisor')+fld('br_title','Their title / role','');}
+  else if(type==='dept'){body=fld('br_dept','Department name','')+fld('br_person','Contact person','')+fld('br_phone','Telephone','')+fld('br_email','Email','')+fld('br_loc','Location','');}
+  else if(type==='cannotrelease'){body=fld('br_cust','Authorized records custodian (name/title)','')+fld('br_proc','Formal request procedure','e.g. written request to legal dept, 10-day response');}
+  else if(type==='disposed'){body=`<div class="optgrid" id="dispGrid">${DISPOSITION_TYPES.map(d=>`<button onclick="selDisp(this)">${d}</button>`).join('')}</div>`+fld('br_auth','Who authorized?','')+fld('br_when','When? (date)','')+fld('br_dest','Destination','e.g. landfill, auction house, Warehouse B')+fld('br_rec','Underlying record (number/type)','');}
+  else if(type==='vendor'){body=fld('br_vname','Vendor name','')+fld('br_wo','Work order / invoice number','')+fld('br_vphone','Phone / location','');}
+  else if(type==='norecord'){body=fld('br_rec2','Which record allegedly does not exist?','e.g. inventory of unit 4B')+fld('br_by','Who said so (name/title)','');}
+  else if(type==='refusal'){body=fld('br_word','Exact wording of the refusal','Quote them verbatim')+fld('br_by2','Who refused (name/title)','');}
+  else if(type==='names'){body=fld('br_nm','Name mentioned','')+fld('br_nmrole','Their role / why mentioned','');}
+  else if(type==='cooperative'){body=fld('br_got','What was provided / confirmed?','');}
+  openSheet(`<h3>${o.label}</h3><div class="why">${o.why}</div>${body}
+    <button class="btn ${o.color==='red'?'red':o.color==='teal'?'teal':''}" onclick="saveOutcome('${type}')">Create Event & Next Node</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="closeSheet()">Cancel</button>`,true);
+}
+let dispSel='';
+function selDisp(b){document.querySelectorAll('#dispGrid button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');dispSel=b.textContent;}
+
+function saveOutcome(type){
+  const g=id=>document.getElementById(id)?.value.trim()||'';
+  switch(type){
+    case 'dontknow':{
+      const who=g('br_who'),title=g('br_title');
+      if(who){addPerson(who,title||'Person identified by referral');createCustomAction(who,title||'Referred contact','Referred by '+(S.live.personName||'unknown')+' during live interaction','');
+        addBranch(type,'“I don’t know” → referral: '+who+(title?' ('+title+')':''));}
+      else addBranch(type,'“I don’t know” — no referral obtained');break;}
+    case 'dept':{
+      const d=g('br_dept');if(d){S.nodes.push({id:uid(),type:'department',label:d,ts:Date.now()});}
+      if(g('br_person')){addPerson(g('br_person'),d||'Department contact');createCustomAction(g('br_person'),d||'Department contact','Department routing: '+d,'');}
+      addBranch(type,'Routed to department: '+d+(g('br_person')?' — contact: '+g('br_person'):'')+(g('br_phone')?' — '+g('br_phone'):''));
+      break;}
+    case 'cannotrelease':{
+      const c=g('br_cust');if(c){addPerson(c,'Records custodian');createCustomAction(c,'Records custodian','Cannot-release path from '+(S.live.personName||'contact'),'');}
+      addBranch(type,'Record not releasable by this person'+(c?' — authorized custodian: '+c:'')+(g('br_proc')?' — procedure: '+g('br_proc'):''));
+      toast('If records cannot be released — identify the custodian ✓');break;}
+    case 'disposed':{
+      const t=dispSel||'Unknown';
+      addBranch(type,'Property DISPOSED — '+t+' · by: '+(g('br_auth')||'?')+' · when: '+(g('br_when')||'?')+' → '+(g('br_dest')||'destination unknown')+' · record: '+(g('br_rec')||'none cited'),
+        {disp:t,auth:g('br_auth'),when:g('br_when'),dest:g('br_dest'),rec:g('br_rec')});
+      addProp('Property was '+t.toLowerCase()+(g('br_when')?' on or around '+g('br_when'):'')+(g('br_auth')?' — authorized by '+g('br_auth'):''),'PENDING');
+      if(g('br_when'))addClock('property','Final disposition ('+t+')',g('br_when'));
+      if(/stored/i.test(t)&&g('br_dest')){S.nodes.push({id:uid(),type:'propertyLocation',label:g('br_dest'),ts:Date.now()});createCustomAction('Retrieve property — '+g('br_dest'),'Property location','Disposition branch: stored at '+g('br_dest'),'');}
+      break;}
+    case 'vendor':{
+      const v=g('br_vname');if(v){S.nodes.push({id:uid(),type:'vendor',label:v,ts:Date.now()});addPerson(v,'Vendor / hauler / storage');createCustomAction(v,'Vendor','Vendor identified by '+(S.live.personName||'contact')+(g('br_wo')?' — work order '+g('br_wo'):''),'');}
+      if(g('br_wo')){S.nodes.push({id:uid(),type:'workOrder',label:'Work order '+g('br_wo'),ts:Date.now()});addProp('Work order '+g('br_wo')+' exists and is associated with this unit','PENDING');}
+      addBranch(type,'Vendor handled property: '+(v||'unnamed')+(g('br_wo')?' — WO/invoice '+g('br_wo'):''));break;}
+    case 'norecord':{
+      addBranch(type,'Formal Record Nonexistence: “'+(g('br_rec2')||'unspecified record')+' does not exist” — asserted by '+(g('br_by')||'unidentified'));
+      addProp('No record of '+(g('br_rec2')||'the requested item')+' exists (asserted '+(g('br_by')?'by '+g('br_by'):'verbally')+')','UNEXPLAINED');
+      toast('A written “record does not exist” is itself evidence — request it in writing');break;}
+    case 'refusal':{
+      addBranch(type,'REFUSAL — “'+(g('br_word')||'refusal not quoted')+'” — by '+(g('br_by2')||'unidentified person'));
+      logEvent('refusal','Refusal preserved verbatim: "'+(g('br_word')||'')+'" by '+(g('br_by2')||'?'));
+      addProp('A request was refused: "'+(g('br_word')||'')+'"','DOCUMENTED');
+      setTimeout(()=>openEscalate('A refusal was documented. Escalation is a deliberate choice — the ladder below shows prerequisites, not shortcuts.'),400);
+      break;}
+    case 'names':{
+      const n=g('br_nm');if(n){addPerson(n,g('br_nmrole')||'Mentioned during investigation');createCustomAction(n,g('br_nmrole')||'Mentioned contact','Named during live interaction','');}
+      addBranch(type,'Name mentioned: '+n+(g('br_nmrole')?' — '+g('br_nmrole'):''));break;}
+    case 'cooperative':{
+      addBranch(type,'Cooperative — obtained: '+(g('br_got')||'answers (see Q/A log)'));
+      addProp('Information provided during this encounter (see Q/A): '+(g('br_got')||'recorded in interaction'),'DOCUMENTED');break;}
+  }
+  save();closeSheet();
+  const btns=document.querySelectorAll('#liveForm .outcomes button');
+  toast('Event created · node added · next action queued');
+  renderLiveForm();
+}
+
 /* ---------------- node helpers ---------------- */
+/* CF-ADAPTER (migrated): person identity is a structured fact, sourced to the live interaction if there is one */
 function addPerson(name,role){
   if(S.persons.some(p=>p.name.toLowerCase()===name.toLowerCase()))return;
-  S.persons.push({id:uid(),name,role,ts:Date.now(),source:'investigation'});logEvent('branch','New person identified: '+name+' ('+role+')');
+  try{const p=CF.addPerson(name,role,S.live?S.live.id:'');S.persons.push(p);CF.markValidated(S,['persons']);}
+  catch(err){cfBlocked();return;}
+  logEvent('branch','New person identified: '+name+' ('+role+')',undefined,{validated:true});
 }
 function createCustomAction(role,where,summary,contact){
   S.nextCustom.push({id:uid(),key:'X'+uid(),role,where,summary,fromSummary:summary,done:false});
 }
 function addProp(text,status){S.propositions.push({id:uid(),text,status,sources:[S.live?S.live.id:''],ts:Date.now()});}
+/* CF-ADAPTER (migrated): a clock date with no source is marked unverified, same rule as case-setup dates */
 function addClock(clock,label,date){
-  S.clockEntries[clock].push({id:uid(),label,date,ts:Date.now(),src:S.live?S.live.id:''});
-  logEvent('clock',CLOCKS[clock].name+': '+label+' ('+date+')');
+  const source=S.live?S.live.id:'';
+  try{const e=CF.recordClockEntry(clock,label,date,source);S.clockEntries[clock].push(e);CF.markValidated(S,['clockEntries']);}
+  catch(err){cfBlocked();return;}
+  logEvent('clock',CLOCKS[clock].name+': '+label+' ('+date+')'+(source?'':' — UNVERIFIED, no source'),undefined,{validated:true});
 }
 
 /* ---------------- legal reinforcement ---------------- */
@@ -28,128 +115,4 @@ function useRung(i){
     ${fld('rg_note','Case-specific note (dates, records, people involved)','')}
     <button class="btn red" onclick="logRung(${i})">Record This Escalation</button>
     <button class="btn ghost" style="margin-top:8px" onclick="closeSheet()">Cancel</button>`,true);
-}
-function logRung(i){
-  const l=LADDER[i],note=document.getElementById('rg_note')?.value.trim();
-  S.escalations.push({id:uid(),rung:i,title:l.t,pre:l.pre,target:l.target,sought:l.sought,next:l.next,note,ts:Date.now()});
-  logEvent('escalation','Reinforcement used — Rung '+(i+1)+': '+l.t+(note?' — '+note:''));
-  save();closeSheet();toast('Escalation recorded in legal-escalation history');if(document.getElementById('v-ledger').classList.contains('on'))renderLedger();
-}
-
-/* ---------------- complete interaction ---------------- */
-function completeInteraction(){
-  const L=S.live;if(!L)return;
-  /* CF-ADAPTER (migrated): an interaction with nothing captured cannot be locked as completed */
-  const cfg=CF.guardComplete(L);if(!cfg.ok){toast(cfg.reason);return;}
-  L.endTs=Date.now();clearInterval(tick);document.getElementById('livePill').classList.remove('on');
-  const role=PROTOCOL.find(p=>p.key===L.key)?.role||'Evidence-created contact';
-  // record clock entry
-  if(L.clockSel&&L.clockDate){addClock(L.clockSel,L.clockLabel||('Event recorded from interaction with '+(L.personName||role)),L.clockDate);}
-  // named entities → nodes
-  (L.names||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(n=>addPerson(n,'Named in encounter '+fmtTs(L.startTs)));
-  (L.vendors||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(v=>{if(!S.nodes.some(x=>x.label===v)){S.nodes.push({id:uid(),type:'vendor',label:v,ts:Date.now()});createCustomAction(v,'Vendor','Identified in completed encounter','');}});
-  (L.locns||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(l=>{if(!S.nodes.some(x=>x.label===l)){S.nodes.push({id:uid(),type:'propertyLocation',label:l,ts:Date.now()});}});
-  // follow-up
-  if(L.followDue){S.followUps.push({id:uid(),due:L.followDue,desc:L.followNote||('Follow-up: '+role),status:'open',ts:Date.now()});logEvent('followup','Follow-up scheduled '+L.followDue+': '+(L.followNote||role));}
-  // chain nudge: if disposition data exists, mark final node fields
-  const disp=(L.branches||[]).find(b=>b.type==='disposed');
-  if(disp&&disp.data){
-    const cn=S.chain[S.chain.length-1];
-    cn.fields['Who?']=cn.fields['Who?']||disp.data.auth;cn.fields['When?']=cn.fields['When?']||disp.data.when;
-    cn.fields['Where?']=cn.fields['Where?']||disp.data.dest;cn.fields['What record proves it?']=cn.fields['What record proves it?']||disp.data.rec;
-    cn.gaps=6-Object.values(cn.fields).filter(v=>v&&v.trim()).length;
-  }
-  // log interview
-  logEvent('interview','Interview completed: '+(L.personName||'unidentified')+(L.personTitle?' ('+L.personTitle+')':'')+' — '+role+' · '+Math.round((L.endTs-L.startTs)/60000)+' min · '+(L.qa.filter(x=>x.q).length)+' questions',undefined,{validated:true});   /* CF-ADAPTER: passed the completion guard */
-  // update action
-  const a=S.actions.find(x=>x.key===L.key);
-  if(a){a.interactions++;a.status='done';if(L.personName)a.personName=L.personName;if(L.personContact)L.personContact=L.personContact;}
-  const c=S.nextCustom.find(n=>n.id===L.customId);if(c)c.done=true;
-  try{CF.recordOutcomes(L);}catch(err){cfBlocked();}   /* CF-ADAPTER (migrated): typed outcomes */
-  S.interactions.push({...L});
-  S.live=null;save();
-  toast('Interaction locked into the ledger');
-  /* CF-ADAPTER: the page-load resume block had been pasted here; since S.live is null at this
-     point it always took the else-branch, so this is behaviour-identical. */
-  showView('v-dash');renderDash();
-}
-
-/* ---------------- clocks ---------------- */
-function computeConflicts(){
-  const conf=[];const pos=S.clockDates.possession,dl=S.clockDates.noticeDeadline;
-  const chk=(clock,entries)=>entries.forEach(e=>{
-    if(pos&&e.date&&e.date<pos&&/removed|moved|entered|cleared|encountered|transported/i.test(e.label))
-      conf.push({clock,label:e.label,why:'Dated before the possession date ('+pos+') — property event predates lawful possession.'});
-  });
-  chk('property',S.clockEntries.property);chk('turnover',S.clockEntries.turnover);
-  if(dl){const disp=S.clockEntries.property.find(e=>/disposition/i.test(e.label)&&e.date&&e.date<dl);
-    if(disp)conf.push({clock:'notice',label:disp.label,why:'Disposition dated before the notice claim deadline ('+dl+') — unlawful-disposition red flag under Civ. Code §§1983–1988.'});}
-  return conf;
-}
-function renderClocks(){
-  const conf=computeConflicts();
-  document.getElementById('clocksBody').innerHTML=Object.entries(CLOCKS).map(([k,c])=>{
-    const entries=[...S.clockEntries[k]].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    return `<div class="clockcard"><h3><span><span class="pill" style="background:${c.color};color:#fff">${c.name}</span></span>
-      <button class="btn sm ghost" onclick="addClockEntry('${k}')">+ Entry</button></h3>
-      <div class="muted" style="font-size:10px;margin-bottom:6px">Template: ${c.steps.join(' → ')}</div>
-      ${entries.map(e=>{
-        const cf=conf.find(x=>x.label===e.label&&x.clock===k);
-        /* CF-ADAPTER: unverified dates are labelled, and conflicts computed from them are provisional */
-        const posUnv=S.clockEntries.possession.some(p=>p.unverified&&p.date===S.clockDates.possession&&(!p.prop_id||CF.propositionGate(p.prop_id)!=='passed'));
-        return `<div class="tlentry ${cf?'conflict':''}"><div class="d">${esc(e.label)}</div><div class="m">${esc(e.date||'no date')} · logged ${fmtTs(e.ts)}</div>${e.unverified?'<div class="cf-unv">UNVERIFIED — no source attached; not an anchor</div>':''}${cf?`<div class="conflictnote">⚠ ${posUnv?'PROVISIONAL (possession date unverified): ':''}${cf.why}</div>`:''}</div>`;
-      }).join('')||'<div class="muted" style="font-size:11.5px">No entries yet. Log clock events during live interactions or tap + Entry.</div>'}
-    </div>`;}).join('');
-  updateBadges(conf.length,S.actions.filter(a=>a.status==='pending').length+S.nextCustom.filter(n=>!n.done).length);
-}
-function addClockEntry(k){
-  openSheet(`<h3>Add ${CLOCKS[k].name} Entry</h3><div class="why">Anchor it to a date. Conflicts against the possession date and notice deadline are checked automatically.</div>
-    ${fld('ce_label','Event label','e.g. Unit entered & cleared')}
-    <div class="field"><label>Date</label><input type="date" id="ce_date"></div>
-    <button class="btn" onclick="saveClockEntry('${k}')">Add Entry</button>`,true);
-}
-function saveClockEntry(k){addClock(k,document.getElementById('ce_label').value||'Event',document.getElementById('ce_date').value||'');save();closeSheet();renderClocks();toast('Clock entry added');}
-
-/* ---------------- chain ---------------- */
-function renderChain(){
-  document.getElementById('chainBody').innerHTML=S.chain.map((n,i)=>{
-    const filled=Object.values(n.fields).filter(v=>v&&v.trim()).length;
-    const g=n.gaps=6-filled;
-    return `<div class="chainnode ${i===0?'open':''}"><div class="hd" onclick="this.parentElement.classList.toggle('open')">
-      <h3>${i+1}. ${esc(n.name)}</h3><span class="gapcount ${g===0?'g0':g<=2?'g1':'g2'}">${g===0?'COMPLETE':g+' GAP'+(g>1?'S':'')}</span></div>
-      <div class="chainfields">${SIX_Q.map(q=>`<input class="${n.fields[q]?'':'empty'}" placeholder="${q}" value="${esc(n.fields[q]||'')}" onchange="S.chain[${i}].fields['${q}']=this.value;save();renderChain()">`).join('')}</div></div>`;
-  }).join('')+`<div class="tip"><b>Chain Rule</b>A missing answer is a visible gap — and the gap is your next question. Work the gaps in order; the break point is where the leverage lives.</div>`;
-}
-/* ============================ PART 4: LEDGER + REPORT + INIT ============================ */
-
-/* ---------------- ledger ---------------- */
-function renderLedger(){
-  const evs=[...S.events].sort((a,b)=>b.ts-a.ts);
-  /* CF-ADAPTER: integrity status, unvalidated-write count, and a resume packet for case_reasoner */
-  const v=CF.verify(),blocked=CF.blocked;
-  const bar=`<div class="cf-bar ${blocked||!v.ok?'bad':''}">${blocked?'Stored ledger FAILED verification. Writes are blocked; the stored copy was not modified. '+esc(blocked)
-    :'Ledger verified · '+v.entries+' entries · head '+esc((v.head||'').slice(0,12))+' · '+CF.legacyWriteCount()+' unvalidated legacy writes on record'}
-    <div style="margin-top:6px"><button class="btn sm ghost" style="padding:4px 9px;font-size:10.5px" onclick="cfCopyResume()">Copy resume packet</button></div></div>`;
-  document.getElementById('ledgerBody').innerHTML=bar+evs.map(e=>`
-    <div class="lev" style="border-left-color:${EV_COLORS[e.type]||'#12325e'}">
-      <span class="tp" style="background:${EV_COLORS[e.type]||'#12325e'}">${e.type}</span><span class="ts">#${e.seq} · ${fmtTs(e.ts)}</span>${cfProv(e)}
-      <div style="margin-top:3px">${esc(e.summary)}</div>
-      ${(e.ann&&e.ann.length?e.ann.map(a=>`<div class="ann">✎ Annotation ${fmtTs(a.ts)}: ${esc(a.text)}</div>`).join(''):'')}
-      <button class="btn sm ghost" style="margin-top:5px;padding:4px 9px;font-size:10.5px" onclick="annotate('${e.id}')">+ Annotate (never overwrites)</button>
-    </div>`).join('')||'<div class="emptyrep">No events yet. The ledger fills itself as you execute.</div>';
-}
-function annotate(id){
-  openSheet(`<h3>Annotate Event</h3><div class="why">Annotations append to history. The original entry is never altered or deleted.</div>
-    <div class="field"><label>Annotation</label><textarea id="ann_text"></textarea></div>
-    <button class="btn" onclick="saveAnn('${id}')">Append Annotation</button>`,true);
-}
-function saveAnn(id){
-  /* CF-ADAPTER (migrated): the annotation is its own ledger entry; the original is untouched */
-  try{CF.annotate(id,document.getElementById('ann_text').value);S.events=CF.events();save();closeSheet();renderLedger();}
-  catch(err){toast(err.code==='K_ANN_TEXT'?'Annotation is empty':(err.code==='K_BLOCKED'?'Ledger failed verification — not saved':err.message));}
-}
-function cfProv(e){
-  if(e.provenance==='validated')return '<span class="cf-prov cf-valid">validated</span>';
-  if(e.provenance==='legacy_import')return '<span class="cf-prov cf-import">imported history</span>';
-  return '<span class="cf-prov cf-legacy">legacy write</span>';
 }

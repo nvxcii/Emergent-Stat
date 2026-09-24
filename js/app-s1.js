@@ -10,7 +10,7 @@ const CHAIN_TEMPLATE = ['Unit (former apartment)','Pre-Clearance Inspection','As
 const SIX_Q = ['Who?','When?','Where?','Under whose authority?','What record proves it?','Next custodian?'];
 
 const CLOCKS = {
-  possession:{name:'Possession Clock',color:'#2f6fb2',steps:['Sheriff / internal possession','Possession entry (records)]'},
+  possession:{name:'Possession Clock',color:'#2f6fb2',steps:['Sheriff / internal possession','Possession entry (records)']},
   turnover:{name:'Turnover Clock',color:'#4caf50',steps:['Inspection','Turnover / work order opened','Personnel / vendor assigned','Unit entered & cleared','Completed / closed']},
   property:{name:'Property Clock',color:'#f28c28',steps:['Belongings encountered','Described / photo / inventory','Moved','Transported','Storage','Retrieval opportunity','Valuation','Final disposition']},
   notice:{name:'Notice Clock',color:'#7b4fa6',steps:['Property notice prepared','Service / mailing','Retrieval location identified','Claim deadline','Disposition date']}
